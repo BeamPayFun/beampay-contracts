@@ -1,0 +1,52 @@
+{
+  "chainId": 97,
+  "chainName": "BSC Testnet",
+  "explorer": "https://testnet.bscscan.com",
+  "deployer": "0x6bc3C40F13eF073E10dF0647Af5672d79b79f5C0",
+  "contracts": {
+    "router": {
+      "BeamRouter": {
+        "address": "0x2cf535a0754aD48Ffd2F2Af5411dFc293a0D8cE3",
+        "deployTxHash": "0xa105dc9d73717de09df486c6db4b9350fa1dd80e7ef969702bdf7b4b417a7f75",
+        "deployedAt": "2026-05-20",
+        "verified": true,
+        "source": "src/BeamRouter.sol",
+        "constructor": {
+          "governance": "0x6bc3C40F13eF073E10dF0647Af5672d79b79f5C0",
+          "initialFeeRateBps": 10,
+          "initialTokens": [
+            "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+            "0x0c6DfFCbb941d2fDec9c8107e8128dcb6651951c",
+            "0x44a25C4cbe72a249866B6750F8594ba170a653fC"
+          ],
+          "initialRecipients": [
+            "0x6bc3C40F13eF073E10dF0647Af5672d79b79f5C0",
+            "0x08c145fe72884574d811ab25119da458a0c1a72e4"
+          ]
+        }
+      }
+    },
+    "mocks": {
+      "tUSDT": {
+        "address": "0x0c6DfFCbb941d2fDec9c8107e8128dcb6651951c",
+        "name": "Beam Test USDT",
+        "symbol": "tUSDT",
+        "decimals": 6,
+        "deployTxHash": "0x7bf0b9e4ec2f80e7424f9377ac32770c77a83d6a6f68092a15d7c34c1cdb3d43",
+        "deployedAt": "2026-05-20",
+        "verified": true,
+        "source": "src/mocks/BeamMockERC20.sol"
+      },
+      "tUSDC": {
+        "address": "0x44a25C4cbe72a249866B6750F8594ba170a653fC",
+        "name": "Beam Test USDC",
+        "symbol": "tUSDC",
+        "decimals": 6,
+        "deployTxHash": "0xc1543c7d81bc778ada0ca8295e6a05ee387519c159f49a80613cd0e12142307c",
+        "deployedAt": "2026-05-20",
+        "verified": true,
+        "source": "src/mocks/BeamMockERC20.sol"
+      }
+    }
+  }
+}

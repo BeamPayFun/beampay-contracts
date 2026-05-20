@@ -1,0 +1,29 @@
+{
+  "name": "beam-contracts",
+  "version": "0.1.0",
+  "description": "BeamPay protocol contracts — permissionless on-chain payment router for whitelisted ERC20 tokens and native asset",
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test",
+    "test:gas": "forge test --gas-report",
+    "coverage": "forge coverage --report lcov",
+    "snapshot": "forge snapshot",
+    "snapshot:check": "forge snapshot --check",
+    "fmt": "forge fmt",
+    "fmt:check": "forge fmt --check",
+    "check": "prettier --check 'src/**/*.sol' 'script/**/*.sol' 'test/**/*.sol'",
+    "fix": "prettier --write 'src/**/*.sol' 'script/**/*.sol' 'test/**/*.sol'",
+    "slither": "slither src/BeamRouter.sol --config-file slither.config.json",
+    "solhint": "solhint 'src/**/*.sol' 'script/**/*.sol' 'test/**/*.sol'",
+    "prepare": "husky"
+  },
+  "author": "BeamPay",
+  "license": "MIT",
+  "devDependencies": {
+    "husky": "^9.1.6",
+    "lint-staged": "^15.2.4",
+    "prettier": "^3.2.5",
+    "prettier-plugin-solidity": "^1.3.1",
+    "solhint": "^5.0.5"
+  }
+}

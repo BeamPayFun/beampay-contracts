@@ -1,0 +1,13 @@
+{
+  "extends": "solhint:recommended",
+  "rules": {
+    "code-complexity": ["error", 8],
+    "function-max-lines": ["error", 50],
+    "max-line-length": ["error", 120],
+    "contract-name-camelcase": "error",
+    "func-name-mixedcase": "error",
+    "var-name-mixedcase": "error",
+    "no-empty-blocks": "off",
+    "no-inline-assembly": "off"
+  }
+}
