@@ -6,11 +6,19 @@
   "contracts": {
     "router": {
       "BeamRouter": {
-        "address": "0x2cf535a0754aD48Ffd2F2Af5411dFc293a0D8cE3",
-        "deployTxHash": "0xa105dc9d73717de09df486c6db4b9350fa1dd80e7ef969702bdf7b4b417a7f75",
-        "deployedAt": "2026-05-20",
+        "address": "0x67b7E4a8c77877C0FF51e03554B373211FbB1711",
+        "deployTxHash": "0x79013177255eba549b557165030cfa4c86cca53a7fb6979000406604276e0cfe",
+        "deployedAt": "2026-05-21",
+        "deployedBlock": 108643298,
+        "version": "v1-signed-orders-2026-05-21",
         "verified": true,
         "source": "src/BeamRouter.sol",
+        "previous": {
+          "address": "0x2cf535a0754aD48Ffd2F2Af5411dFc293a0D8cE3",
+          "deployTxHash": "0xa105dc9d73717de09df486c6db4b9350fa1dd80e7ef969702bdf7b4b417a7f75",
+          "deployedAt": "2026-05-20",
+          "version": "v1.3"
+        },
         "constructor": {
           "governance": "0x6bc3C40F13eF073E10dF0647Af5672d79b79f5C0",
           "initialFeeRateBps": 10,
