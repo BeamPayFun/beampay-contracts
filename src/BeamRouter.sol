@@ -470,9 +470,8 @@ contract BeamRouter is EIP712 {
         if (signer != merchant && signer != merchantSigner[merchant]) revert UnauthorizedSigner();
 
         // ====== EIP-712 signature verification (v1.0 signed orders) ======
-        bytes32 structHash = keccak256(
-            abi.encode(ORDER_TYPEHASH, merchant, signer, token, amount, orderId, createdAt, expiresAt)
-        );
+        bytes32 structHash =
+            keccak256(abi.encode(ORDER_TYPEHASH, merchant, signer, token, amount, orderId, createdAt, expiresAt));
         bytes32 digest = _hashTypedDataV4(structHash);
         if (digest.recover(signature) != signer) revert InvalidSignature();
 
@@ -526,7 +525,7 @@ contract BeamRouter is EIP712 {
             // Step 1: try to send fee straight to the protocol recipient.
             // Audit M-02: tolerate Tether/Circle blacklisting — failure must not revert.
             if (isNative) {
-                (bool ok,) = feeTo.call{value: fee}("");
+                (bool ok,) = feeTo.call{ value: fee }("");
                 feeCollected = ok;
             } else {
                 feeCollected = IERC20(token).trySafeTransferFrom(msg.sender, feeTo, fee);
@@ -552,7 +551,7 @@ contract BeamRouter is EIP712 {
         //        amount in one .call to fold the redirected fee into the same payment.
         if (isNative) {
             uint256 merchantAmount = feeCollected ? amount - fee : amount;
-            (bool ok,) = merchant.call{value: merchantAmount}("");
+            (bool ok,) = merchant.call{ value: merchantAmount }("");
             if (!ok) revert NativeTransferFailed();
         } else {
             IERC20(token).safeTransferFrom(msg.sender, merchant, amount - fee);
@@ -600,7 +599,7 @@ contract BeamRouter is EIP712 {
         // ====== Interactions ======
         if (token == NATIVE_TOKEN) {
             if (msg.value != amount) revert IncorrectNativeValue();
-            (bool ok,) = payer.call{value: amount}("");
+            (bool ok,) = payer.call{ value: amount }("");
             if (!ok) revert NativeTransferFailed();
         } else {
             if (msg.value != 0) revert UnexpectedNativeValue();

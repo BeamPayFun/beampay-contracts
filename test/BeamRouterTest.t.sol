@@ -153,7 +153,8 @@ contract BeamRouterTest is Test {
         uint256 amount = 100_000;
         uint256 fee = (amount * 10) / 10_000;
         bytes32 orderId = keccak256("order-bad");
-        (address _s, uint64 _ca, uint64 _ea, bytes memory _sig) = _signOrderAsMerchant(address(badToken), amount, orderId);
+        (address _s, uint64 _ca, uint64 _ea, bytes memory _sig) =
+            _signOrderAsMerchant(address(badToken), amount, orderId);
 
         badToken.mint(payer, amount);
         vm.prank(payer);
@@ -662,4 +663,4 @@ contract BeamRouterTest is Test {
 
 /// @dev Helper contract that intentionally has no receive()/fallback(); used to simulate
 ///      a fee recipient whose native call always fails (forcing the H-06 fee-redirect path).
-contract NoReceive {}
+contract NoReceive { }

@@ -70,7 +70,8 @@ contract MockReentrantToken {
                 uint64(block.timestamp),
                 uint64(block.timestamp + 1),
                 ""
-            ) { } catch { }
+            ) { }
+                catch { }
         }
 
         return true;

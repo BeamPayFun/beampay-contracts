@@ -234,7 +234,9 @@ contract BeamRouterSignedTest is Test {
         uint64 createdAt = uint64(block.timestamp);
         uint64 expiresAt = createdAt + DEFAULT_TTL;
         bytes32 structHash = keccak256(
-            abi.encode(router.ORDER_TYPEHASH(), merchant, merchant, address(token), amount, orderId, createdAt, expiresAt)
+            abi.encode(
+                router.ORDER_TYPEHASH(), merchant, merchant, address(token), amount, orderId, createdAt, expiresAt
+            )
         );
         bytes32 digest = MessageHashUtils.toTypedDataHash(router.DOMAIN_SEPARATOR(), structHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(attackerWallet.privateKey, digest);

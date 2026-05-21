@@ -37,7 +37,8 @@ contract BeamRouterHandler is Test {
         // handler can produce a valid EIP-712 signature). secp256k1 order N is enforced
         // by bounding the key to [1, N-1] — vm.addr rejects keys outside that range.
         uint256 merchantPriv = uint256(keccak256(abi.encode(rawMerchant, payments.length, "merchant")));
-        merchantPriv = bound(merchantPriv, 1, 115792089237316195423570985008687907852837564279074904382605163141518161494336);
+        merchantPriv =
+            bound(merchantPriv, 1, 115792089237316195423570985008687907852837564279074904382605163141518161494336);
         address merchant = vm.addr(merchantPriv);
 
         // ensure unique orderId per (merchant, orderId) pair
