@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+
 /**
  * @title BeamRouter
  * @author BeamPay Team
  * @notice BeamPay protocol core contract — permissionless on-chain payment router
- *         for whitelisted ERC20 tokens and native asset (ETH/BNB) — v1.3
+ *         for whitelisted ERC20 tokens and native asset (ETH/BNB) — v1.0 (signed orders)
  *
  * @dev Design Principles:
  *      1. Funds Never Held in Contract
@@ -104,8 +107,9 @@ library SafeERC20 {
  *      multisig, no admin backdoor**. Once deployed, pay() is callable forever.
  *      Every parameter change waits out the 7-day timelock.
  */
-contract BeamRouter {
+contract BeamRouter is EIP712 {
     using SafeERC20 for IERC20;
+    using ECDSA for bytes32;
 
     // ========================================================
     // ============ Hard Limits (forever immutable) ===========
@@ -129,6 +133,12 @@ contract BeamRouter {
     /// @dev    1inch/Curve convention; chosen so it cannot collide with any real ERC20.
     ///         Must still be added to the whitelist via addToken(NATIVE_TOKEN).
     address public constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
+    /// @notice EIP-712 typehash for the merchant-signed `Order` struct.
+    /// @dev    Field order MUST match the front-end's `signTypedData` payload exactly.
+    bytes32 public constant ORDER_TYPEHASH = keccak256(
+        "Order(address merchant,address signer,address token,uint256 amount,bytes32 orderId,uint64 createdAt,uint64 expiresAt)"
+    );
 
     // ========================================================
     // ============ Governance ================================
@@ -190,16 +200,39 @@ contract BeamRouter {
     /// @notice Full order record stored per (merchant, orderId).
     /// @dev Audit fix M-08: merged processed/orderAmount/refunded into a single struct
     ///                    to cut storage cost.
+    ///      v1.0: dropped `exists` — `payer != address(0)` serves as the sentinel for
+    ///            "order paid" (pay() always writes a non-zero msg.sender). Added
+    ///            `signer`, `createdAt`, `expiresAt` from the EIP-712 signed payload.
+    ///            Storage layout (5 slots, optimized):
+    ///              slot0: payer(20) + createdAt(8)
+    ///              slot1: token(20)
+    ///              slot2: amount(32)
+    ///              slot3: refunded(32)
+    ///              slot4: signer(20) + expiresAt(8)
     struct OrderRecord {
-        bool exists; // Whether the order has been paid
-        address payer; // Original payer (enforced for refunds)
-        address token; // Token used for the order (refunds use the same token)
-        uint256 amount; // Original order amount (refund ceiling)
-        uint256 refunded; // Cumulative refunded amount
+        address payer; // 20B — non-zero iff order paid (replaces `exists`)
+        uint64 createdAt; // 8B — timestamp from signed payload (packs with payer)
+        address token; // 20B — token used for the order (refunds use same)
+        uint256 amount; // 32B — original order amount (refund ceiling)
+        uint256 refunded; // 32B — cumulative refunded amount
+        address signer; // 20B — recovered EIP-712 signer (merchant or delegate)
+        uint64 expiresAt; // 8B — timestamp from signed payload (packs with signer)
     }
 
     /// @notice Order key (keccak256(merchant, orderId)) -> OrderRecord.
     mapping(bytes32 => OrderRecord) public orders;
+
+    // ========================================================
+    // ============ Merchant Signer Delegation ================
+    // ========================================================
+
+    /// @notice Per-merchant authorized signer. address(0) = no delegate; only the merchant
+    ///         itself may sign orders. Setting a non-zero value lets that wallet co-sign on
+    ///         the merchant's behalf. Self-sovereign: only the merchant (msg.sender) writes
+    ///         its own slot, no governance involvement.
+    /// @dev    Single delegate per merchant; calling `setSigner(addr)` overwrites the previous
+    ///         delegate. Calling `setSigner(address(0))` clears delegation.
+    mapping(address merchant => address signer) public merchantSigner;
 
     // ========================================================
     // ============ Reentrancy Guard ==========================
@@ -238,6 +271,15 @@ contract BeamRouter {
     error UnexpectedNativeValue();
     /// @notice Low-level .call{value:} to a recipient failed (out of gas, revert, etc.).
     error NativeTransferFailed();
+
+    /// @notice block.timestamp > expiresAt: signed order is past its expiry window.
+    error OrderExpired();
+    /// @notice signer parameter is not the merchant and not the merchant's authorized delegate.
+    error UnauthorizedSigner();
+    /// @notice ECDSA.recover(digest, signature) did not equal the declared `signer`.
+    error InvalidSignature();
+    /// @notice expiresAt <= createdAt: signed window is empty or inverted.
+    error InvalidExpiry();
 
     // ========================================================
     // ============ Events ====================================
@@ -290,6 +332,12 @@ contract BeamRouter {
     event GovernanceTransferred(address indexed oldGov, address indexed newGov);
     event Initialized(address governance, uint256 feeRate, uint256 timelockDelay);
 
+    /// @notice Merchant updated its authorized signer delegate.
+    /// @param merchant  Merchant whose delegate slot was written.
+    /// @param oldSigner Previous delegate (address(0) if none).
+    /// @param newSigner New delegate (address(0) clears delegation).
+    event SignerUpdated(address indexed merchant, address indexed oldSigner, address indexed newSigner);
+
     // ========================================================
     // ============ Modifiers =================================
     // ========================================================
@@ -328,7 +376,7 @@ contract BeamRouter {
         address[] memory _initialTokens,
         address[] memory _initialRecipients,
         uint256 _initialFeeRate
-    ) {
+    ) EIP712("BeamRouter", "1") {
         // Audit fix H-05: validate constructor parameters.
         if (_governance == address(0)) revert ZeroAddress();
         if (_initialFeeRate > FEE_RATE_HARD_LIMIT) revert RateExceedsHardLimit();
@@ -365,12 +413,17 @@ contract BeamRouter {
     // ========================================================
 
     /**
-     * @notice Pay an order. Funds flow: payer -> merchant + payer -> feeRecipient,
+     * @notice Pay a merchant-signed order. Funds flow: payer -> merchant + payer -> feeRecipient,
      *         all inside this single call.
-     * @param merchant Merchant receiving the payment.
-     * @param token    Token to pay with — must be whitelisted. Use NATIVE_TOKEN for native asset.
-     * @param amount   Order amount (pre-fee).
-     * @param orderId  Merchant-scoped order id; must be unique per merchant.
+     * @param merchant   Merchant receiving the payment.
+     * @param token      Token to pay with — must be whitelisted. Use NATIVE_TOKEN for native asset.
+     * @param amount     Order amount (pre-fee).
+     * @param orderId    Merchant-scoped order id; must be unique per merchant.
+     * @param signer     Declared signer of the EIP-712 payload (must equal `merchant` or
+     *                   `merchantSigner[merchant]`).
+     * @param createdAt  Timestamp (unix seconds) when the merchant signed the order.
+     * @param expiresAt  Timestamp (unix seconds) after which the signature is no longer valid.
+     * @param signature  EIP-712 secp256k1 signature over the `Order` struct (see ORDER_TYPEHASH).
      *
      * @dev Security notes:
      *      - No whenNotPaused modifier; the contract has no pause state.
@@ -380,8 +433,19 @@ contract BeamRouter {
      *      - try-fee leg: blacklisted fee recipient does not abort the merchant leg.
      *      - amount > fee: prevents merchant from receiving 0 due to rounding.
      *      - Native path: msg.value == amount required; ERC20 path: msg.value == 0 required.
+     *      - EIP-712 signature binds (chainId, verifyingContract, merchant, signer, token,
+     *        amount, orderId, createdAt, expiresAt). Any tamper invalidates the signature.
      */
-    function pay(address merchant, address token, uint256 amount, bytes32 orderId) external payable nonReentrant {
+    function pay(
+        address merchant,
+        address token,
+        uint256 amount,
+        bytes32 orderId,
+        address signer,
+        uint64 createdAt,
+        uint64 expiresAt,
+        bytes calldata signature
+    ) external payable nonReentrant {
         // ====== Input validation ======
         if (merchant == address(0)) revert ZeroAddress();
         if (!allowedTokens[token]) revert TokenNotAllowed();
@@ -395,9 +459,25 @@ contract BeamRouter {
             if (msg.value != 0) revert UnexpectedNativeValue();
         }
 
-        // ====== Replay guard ======
+        // ====== Temporal validation (v1.0 signed orders) ======
+        if (expiresAt <= createdAt) revert InvalidExpiry();
+        if (block.timestamp > expiresAt) revert OrderExpired();
+
+        // ====== Signer authorization (v1.0 signed orders) ======
+        // Declared signer must be either the merchant itself or the merchant's currently
+        // authorized delegate. merchantSigner[merchant] == address(0) collapses to
+        // "only merchant may sign" — never matches a non-zero `signer` parameter.
+        if (signer != merchant && signer != merchantSigner[merchant]) revert UnauthorizedSigner();
+
+        // ====== EIP-712 signature verification (v1.0 signed orders) ======
+        bytes32 structHash =
+            keccak256(abi.encode(ORDER_TYPEHASH, merchant, signer, token, amount, orderId, createdAt, expiresAt));
+        bytes32 digest = _hashTypedDataV4(structHash);
+        if (digest.recover(signature) != signer) revert InvalidSignature();
+
+        // ====== Replay guard (payer != 0 sentinel; replaces old `exists` flag) ======
         bytes32 key = keccak256(abi.encode(merchant, orderId));
-        if (orders[key].exists) revert DuplicateOrder();
+        if (orders[key].payer != address(0)) revert DuplicateOrder();
 
         // ====== Fee calculation (linear, no per-tx cap) ======
         uint256 fee = (amount * currentFeeRate) / BASIS_POINTS_DENOMINATOR;
@@ -408,7 +488,15 @@ contract BeamRouter {
         if (amount <= fee) revert AmountTooSmall();
 
         // ====== Effects (state write before any external interaction) ======
-        orders[key] = OrderRecord({ exists: true, payer: msg.sender, token: token, amount: amount, refunded: 0 });
+        orders[key] = OrderRecord({
+            payer: msg.sender,
+            createdAt: createdAt,
+            token: token,
+            amount: amount,
+            refunded: 0,
+            signer: signer,
+            expiresAt: expiresAt
+        });
 
         // ====== Interactions (H-06 fix: fee-first try + redirect-to-merchant fallback) ======
         //
@@ -437,7 +525,7 @@ contract BeamRouter {
             // Step 1: try to send fee straight to the protocol recipient.
             // Audit M-02: tolerate Tether/Circle blacklisting — failure must not revert.
             if (isNative) {
-                (bool ok,) = feeTo.call{value: fee}("");
+                (bool ok,) = feeTo.call{ value: fee }("");
                 feeCollected = ok;
             } else {
                 feeCollected = IERC20(token).trySafeTransferFrom(msg.sender, feeTo, fee);
@@ -463,7 +551,7 @@ contract BeamRouter {
         //        amount in one .call to fold the redirected fee into the same payment.
         if (isNative) {
             uint256 merchantAmount = feeCollected ? amount - fee : amount;
-            (bool ok,) = merchant.call{value: merchantAmount}("");
+            (bool ok,) = merchant.call{ value: merchantAmount }("");
             if (!ok) revert NativeTransferFailed();
         } else {
             IERC20(token).safeTransferFrom(msg.sender, merchant, amount - fee);
@@ -497,8 +585,8 @@ contract BeamRouter {
         bytes32 key = keccak256(abi.encode(msg.sender, orderId));
         OrderRecord storage order = orders[key];
 
-        // Order must exist (i.e. have been paid).
-        if (!order.exists) revert OrderNotPaid();
+        // Order must exist (i.e. have been paid). v1.0: `payer != 0` replaces dropped `exists`.
+        if (order.payer == address(0)) revert OrderNotPaid();
         // Cumulative refund cap.
         if (order.refunded + amount > order.amount) revert RefundExceedsOrder();
 
@@ -511,7 +599,7 @@ contract BeamRouter {
         // ====== Interactions ======
         if (token == NATIVE_TOKEN) {
             if (msg.value != amount) revert IncorrectNativeValue();
-            (bool ok,) = payer.call{value: amount}("");
+            (bool ok,) = payer.call{ value: amount }("");
             if (!ok) revert NativeTransferFailed();
         } else {
             if (msg.value != 0) revert UnexpectedNativeValue();
@@ -672,6 +760,24 @@ contract BeamRouter {
     }
 
     // ========================================================
+    // ============ Merchant Signer Delegation ================
+    // ========================================================
+    // Merchant-sovereign: each merchant writes its own `merchantSigner` slot directly.
+    // No governance, no timelock — a merchant must be able to rotate / revoke a leaked
+    // delegate key without waiting 7 days. The signer field is scoped to that merchant
+    // only; it cannot grant signing authority for any other merchant.
+
+    /// @notice Set or clear the merchant's authorized signing delegate.
+    /// @dev    msg.sender is the merchant. Passing `newSigner == address(0)` clears
+    ///         delegation so only the merchant itself can sign subsequent orders.
+    /// @param newSigner New delegate address (or address(0) to clear).
+    function setSigner(address newSigner) external {
+        address oldSigner = merchantSigner[msg.sender];
+        merchantSigner[msg.sender] = newSigner;
+        emit SignerUpdated(msg.sender, oldSigner, newSigner);
+    }
+
+    // ========================================================
     // ============ View Functions ============================
     // ========================================================
 
@@ -685,15 +791,17 @@ contract BeamRouter {
         return feeRecipients.length;
     }
 
-    /// @notice Look up an order record.
-    function getOrder(address merchant, bytes32 orderId)
-        external
-        view
-        returns (bool exists, address payer, address token, uint256 amount, uint256 refundedAmount)
-    {
-        bytes32 key = keccak256(abi.encode(merchant, orderId));
-        OrderRecord memory o = orders[key];
-        return (o.exists, o.payer, o.token, o.amount, o.refunded);
+    /// @notice Look up an order record. Returns a zero-valued struct (payer == address(0))
+    ///         if no order was paid for this (merchant, orderId) pair.
+    function getOrder(address merchant, bytes32 orderId) external view returns (OrderRecord memory) {
+        return orders[keccak256(abi.encode(merchant, orderId))];
+    }
+
+    /// @notice EIP-712 domain separator for the current chain / contract address.
+    /// @dev    Front-ends should use this to verify they are signing against the correct domain.
+    // solhint-disable-next-line func-name-mixedcase
+    function DOMAIN_SEPARATOR() external view returns (bytes32) {
+        return _domainSeparatorV4();
     }
 
     /// @notice Compute the fee for a given amount under the current rate (linear, no cap).
