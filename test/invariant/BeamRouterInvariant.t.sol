@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { BeamRouter } from "../../src/BeamRouter.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
 
@@ -32,8 +33,12 @@ contract BeamRouterHandler is Test {
         // bound amount to reasonable range
         amount = bound(amount, 1001, 1_000_000_000e18);
 
-        // derive a deterministic but unique merchant address
-        address merchant = address(uint160(uint256(keccak256(abi.encode(rawMerchant, payments.length)))));
+        // Derive a deterministic but unique merchant *wallet* (need a private key so the
+        // handler can produce a valid EIP-712 signature). secp256k1 order N is enforced
+        // by bounding the key to [1, N-1] — vm.addr rejects keys outside that range.
+        uint256 merchantPriv = uint256(keccak256(abi.encode(rawMerchant, payments.length, "merchant")));
+        merchantPriv = bound(merchantPriv, 1, 115792089237316195423570985008687907852837564279074904382605163141518161494336);
+        address merchant = vm.addr(merchantPriv);
 
         // ensure unique orderId per (merchant, orderId) pair
         bytes32 orderId = keccak256(abi.encode(rawOrderId, orderNonce++));
@@ -46,10 +51,21 @@ contract BeamRouterHandler is Test {
         uint256 feeToBalBefore = token.balanceOf(feeRecipient);
 
         // If this order already exists (unlikely with nonce), skip
-        (bool exists,,,,) = router.getOrder(merchant, orderId);
-        if (exists) return;
+        if (router.getOrder(merchant, orderId).payer != address(0)) return;
 
-        try router.pay(merchant, address(token), amount, orderId) {
+        // Build and sign the EIP-712 order payload with the merchant's derived key.
+        uint64 createdAt = uint64(block.timestamp);
+        uint64 expiresAt = uint64(block.timestamp + 30 days);
+        bytes32 structHash = keccak256(
+            abi.encode(
+                router.ORDER_TYPEHASH(), merchant, merchant, address(token), amount, orderId, createdAt, expiresAt
+            )
+        );
+        bytes32 digest = MessageHashUtils.toTypedDataHash(router.DOMAIN_SEPARATOR(), structHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(merchantPriv, digest);
+        bytes memory sig = abi.encodePacked(r, s, v);
+
+        try router.pay(merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig) {
             uint256 merchantReceived = token.balanceOf(merchant) - merchantBalBefore;
             uint256 protocolReceived = token.balanceOf(feeRecipient) - feeToBalBefore;
 

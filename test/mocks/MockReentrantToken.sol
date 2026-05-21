@@ -57,9 +57,20 @@ contract MockReentrantToken {
 
         if (!reentered && address(target) != address(0)) {
             reentered = true;
-            // Attempt reentrancy into pay() with a different orderId
+            // Attempt reentrancy into pay() with a different orderId. The nonReentrant modifier
+            // runs before input/signature validation, so dummy signer/expiry/sig values are fine —
+            // we only need this call to reach the modifier and trigger Reentrant.
             bytes32 reentrantOrderId = keccak256(abi.encodePacked(orderId, uint256(1)));
-            try target.pay(merchant, address(this), amount, reentrantOrderId) { } catch { }
+            try target.pay(
+                merchant,
+                address(this),
+                amount,
+                reentrantOrderId,
+                merchant,
+                uint64(block.timestamp),
+                uint64(block.timestamp + 1),
+                ""
+            ) { } catch { }
         }
 
         return true;
