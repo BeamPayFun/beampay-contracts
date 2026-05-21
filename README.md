@@ -22,7 +22,7 @@ Canonical addresses live under [`deployments/`](./deployments/). One file per ch
 
 | Contract | Address |
 |---|---|
-| BeamRouter | [`0x2cf535a0754aD48Ffd2F2Af5411dFc293a0D8cE3`](https://testnet.bscscan.com/address/0x2cf535a0754ad48ffd2f2af5411dfc293a0d8ce3#code) |
+| BeamRouter (v1.0 signed-orders) | [`0x67b7E4a8c77877C0FF51e03554B373211FbB1711`](https://testnet.bscscan.com/address/0x67b7e4a8c77877c0ff51e03554b373211fbb1711#code) |
 | tUSDT (mock) | [`0x0c6DfFCbb941d2fDec9c8107e8128dcb6651951c`](https://testnet.bscscan.com/address/0x0c6dffcbb941d2fdec9c8107e8128dcb6651951c#code) |
 | tUSDC (mock) | [`0x44a25C4cbe72a249866B6750F8594ba170a653fC`](https://testnet.bscscan.com/address/0x44a25c4cbe72a249866b6750f8594ba170a653fc#code) |
 
