@@ -16,7 +16,7 @@ contract BeamRouterHandler is Test {
         address merchant;
         address feeTo;
         uint256 amount;
-        uint256 merchantReceived;
+        uint256 receiverReceived;
         uint256 protocolReceived;
     }
 
@@ -48,7 +48,10 @@ contract BeamRouterHandler is Test {
         token.mint(address(this), amount);
         token.approve(address(router), amount);
 
-        uint256 merchantBalBefore = token.balanceOf(merchant);
+        // Receiver == merchant for this handler — the invariant under test is ledger accounting,
+        // not receiver/merchant divergence. Receiver/merchant divergence is covered by unit tests.
+        address receiver = merchant;
+        uint256 receiverBalBefore = token.balanceOf(receiver);
         uint256 feeToBalBefore = token.balanceOf(feeRecipient);
 
         // If this order already exists (unlikely with nonce), skip
@@ -59,15 +62,23 @@ contract BeamRouterHandler is Test {
         uint64 expiresAt = uint64(block.timestamp + 30 days);
         bytes32 structHash = keccak256(
             abi.encode(
-                router.ORDER_TYPEHASH(), merchant, merchant, address(token), amount, orderId, createdAt, expiresAt
+                router.ORDER_TYPEHASH(),
+                merchant,
+                receiver,
+                merchant,
+                address(token),
+                amount,
+                orderId,
+                createdAt,
+                expiresAt
             )
         );
         bytes32 digest = MessageHashUtils.toTypedDataHash(router.DOMAIN_SEPARATOR(), structHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(merchantPriv, digest);
         bytes memory sig = abi.encodePacked(r, s, v);
 
-        try router.pay(merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig) {
-            uint256 merchantReceived = token.balanceOf(merchant) - merchantBalBefore;
+        try router.pay(merchant, receiver, address(token), amount, orderId, merchant, createdAt, expiresAt, sig) {
+            uint256 receiverReceived = token.balanceOf(receiver) - receiverBalBefore;
             uint256 protocolReceived = token.balanceOf(feeRecipient) - feeToBalBefore;
 
             payments.push(
@@ -75,7 +86,7 @@ contract BeamRouterHandler is Test {
                     merchant: merchant,
                     feeTo: feeRecipient,
                     amount: amount,
-                    merchantReceived: merchantReceived,
+                    receiverReceived: receiverReceived,
                     protocolReceived: protocolReceived
                 })
             );
@@ -117,9 +128,9 @@ contract BeamRouterInvariant is Test {
     function invariant_ledgerBalanceMatchesAmount() public view {
         uint256 len = handler.paymentsLength();
         for (uint256 i = 0; i < len; i++) {
-            (,, uint256 amount, uint256 merchantReceived, uint256 protocolReceived) = handler.payments(i);
+            (,, uint256 amount, uint256 receiverReceived, uint256 protocolReceived) = handler.payments(i);
 
-            assertEq(merchantReceived + protocolReceived, amount, "invariant violated: merchant + protocol != amount");
+            assertEq(receiverReceived + protocolReceived, amount, "invariant violated: receiver + protocol != amount");
         }
     }
 

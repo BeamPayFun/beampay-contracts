@@ -49,6 +49,7 @@ contract BeamRouterSignedTest is Test {
         BeamRouter target,
         Vm.Wallet memory wallet,
         address merchantAddr,
+        address receiverAddr,
         address tokenAddr,
         uint256 amount,
         bytes32 orderId,
@@ -57,7 +58,15 @@ contract BeamRouterSignedTest is Test {
     ) internal view returns (bytes memory signature) {
         bytes32 structHash = keccak256(
             abi.encode(
-                target.ORDER_TYPEHASH(), merchantAddr, wallet.addr, tokenAddr, amount, orderId, createdAt, expiresAt
+                target.ORDER_TYPEHASH(),
+                merchantAddr,
+                receiverAddr,
+                wallet.addr,
+                tokenAddr,
+                amount,
+                orderId,
+                createdAt,
+                expiresAt
             )
         );
         bytes32 digest = MessageHashUtils.toTypedDataHash(target.DOMAIN_SEPARATOR(), structHash);
@@ -119,12 +128,13 @@ contract BeamRouterSignedTest is Test {
         bytes32 orderId = keccak256("self");
         uint64 createdAt = uint64(block.timestamp);
         uint64 expiresAt = createdAt + DEFAULT_TTL;
-        bytes memory sig =
-            _signOrderOn(router, merchantWallet, merchant, address(token), amount, orderId, createdAt, expiresAt);
+        bytes memory sig = _signOrderOn(
+            router, merchantWallet, merchant, merchant, address(token), amount, orderId, createdAt, expiresAt
+        );
 
         _mintAndApprove(payer, amount);
         vm.prank(payer);
-        router.pay(merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
+        router.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
 
         // OrderRecord captures the v1.0 fields.
         BeamRouter.OrderRecord memory rec = router.getOrder(merchant, orderId);
@@ -144,12 +154,13 @@ contract BeamRouterSignedTest is Test {
         bytes32 orderId = keccak256("delegate");
         uint64 createdAt = uint64(block.timestamp);
         uint64 expiresAt = createdAt + DEFAULT_TTL;
-        bytes memory sig =
-            _signOrderOn(router, delegateWallet, merchant, address(token), amount, orderId, createdAt, expiresAt);
+        bytes memory sig = _signOrderOn(
+            router, delegateWallet, merchant, merchant, address(token), amount, orderId, createdAt, expiresAt
+        );
 
         _mintAndApprove(payer, amount);
         vm.prank(payer);
-        router.pay(merchant, address(token), amount, orderId, delegateWallet.addr, createdAt, expiresAt, sig);
+        router.pay(merchant, merchant, address(token), amount, orderId, delegateWallet.addr, createdAt, expiresAt, sig);
 
         assertEq(router.getOrder(merchant, orderId).signer, delegateWallet.addr);
     }
@@ -166,13 +177,14 @@ contract BeamRouterSignedTest is Test {
         bytes32 orderId = keccak256("revoked-delegate");
         uint64 createdAt = uint64(block.timestamp);
         uint64 expiresAt = createdAt + DEFAULT_TTL;
-        bytes memory sig =
-            _signOrderOn(router, delegateWallet, merchant, address(token), amount, orderId, createdAt, expiresAt);
+        bytes memory sig = _signOrderOn(
+            router, delegateWallet, merchant, merchant, address(token), amount, orderId, createdAt, expiresAt
+        );
 
         _mintAndApprove(payer, amount);
         vm.prank(payer);
         vm.expectRevert(BeamRouter.UnauthorizedSigner.selector);
-        router.pay(merchant, address(token), amount, orderId, delegateWallet.addr, createdAt, expiresAt, sig);
+        router.pay(merchant, merchant, address(token), amount, orderId, delegateWallet.addr, createdAt, expiresAt, sig);
     }
 
     // ========================================================
@@ -186,13 +198,14 @@ contract BeamRouterSignedTest is Test {
         uint64 createdAt = uint64(block.timestamp);
         uint64 expiresAt = createdAt + DEFAULT_TTL;
         // Sign over `signedAmount`, but submit `paidAmount` — recovered signer must mismatch.
-        bytes memory sig =
-            _signOrderOn(router, merchantWallet, merchant, address(token), signedAmount, orderId, createdAt, expiresAt);
+        bytes memory sig = _signOrderOn(
+            router, merchantWallet, merchant, merchant, address(token), signedAmount, orderId, createdAt, expiresAt
+        );
 
         _mintAndApprove(payer, paidAmount);
         vm.prank(payer);
         vm.expectRevert(BeamRouter.InvalidSignature.selector);
-        router.pay(merchant, address(token), paidAmount, orderId, merchant, createdAt, expiresAt, sig);
+        router.pay(merchant, merchant, address(token), paidAmount, orderId, merchant, createdAt, expiresAt, sig);
     }
 
     function testPayTamperedOrderIdReverts() public {
@@ -202,13 +215,13 @@ contract BeamRouterSignedTest is Test {
         uint64 createdAt = uint64(block.timestamp);
         uint64 expiresAt = createdAt + DEFAULT_TTL;
         bytes memory sig = _signOrderOn(
-            router, merchantWallet, merchant, address(token), amount, signedOrderId, createdAt, expiresAt
+            router, merchantWallet, merchant, merchant, address(token), amount, signedOrderId, createdAt, expiresAt
         );
 
         _mintAndApprove(payer, amount);
         vm.prank(payer);
         vm.expectRevert(BeamRouter.InvalidSignature.selector);
-        router.pay(merchant, address(token), amount, paidOrderId, merchant, createdAt, expiresAt, sig);
+        router.pay(merchant, merchant, address(token), amount, paidOrderId, merchant, createdAt, expiresAt, sig);
     }
 
     function testPaySignatureFromAttackerReverts() public {
@@ -217,13 +230,14 @@ contract BeamRouterSignedTest is Test {
         uint64 createdAt = uint64(block.timestamp);
         uint64 expiresAt = createdAt + DEFAULT_TTL;
         // Attacker signs claiming `signer = attacker`. UnauthorizedSigner fires before sig check.
-        bytes memory sig =
-            _signOrderOn(router, attackerWallet, merchant, address(token), amount, orderId, createdAt, expiresAt);
+        bytes memory sig = _signOrderOn(
+            router, attackerWallet, merchant, merchant, address(token), amount, orderId, createdAt, expiresAt
+        );
 
         _mintAndApprove(payer, amount);
         vm.prank(payer);
         vm.expectRevert(BeamRouter.UnauthorizedSigner.selector);
-        router.pay(merchant, address(token), amount, orderId, attackerWallet.addr, createdAt, expiresAt, sig);
+        router.pay(merchant, merchant, address(token), amount, orderId, attackerWallet.addr, createdAt, expiresAt, sig);
     }
 
     function testPaySignatureFromWrongMerchantSlotReverts() public {
@@ -235,7 +249,15 @@ contract BeamRouterSignedTest is Test {
         uint64 expiresAt = createdAt + DEFAULT_TTL;
         bytes32 structHash = keccak256(
             abi.encode(
-                router.ORDER_TYPEHASH(), merchant, merchant, address(token), amount, orderId, createdAt, expiresAt
+                router.ORDER_TYPEHASH(),
+                merchant,
+                merchant, // receiver
+                merchant, // signer (forged)
+                address(token),
+                amount,
+                orderId,
+                createdAt,
+                expiresAt
             )
         );
         bytes32 digest = MessageHashUtils.toTypedDataHash(router.DOMAIN_SEPARATOR(), structHash);
@@ -245,7 +267,7 @@ contract BeamRouterSignedTest is Test {
         _mintAndApprove(payer, amount);
         vm.prank(payer);
         vm.expectRevert(BeamRouter.InvalidSignature.selector);
-        router.pay(merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
+        router.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
     }
 
     // ========================================================
@@ -257,15 +279,16 @@ contract BeamRouterSignedTest is Test {
         bytes32 orderId = keccak256("expired");
         uint64 createdAt = uint64(block.timestamp);
         uint64 expiresAt = createdAt + 60;
-        bytes memory sig =
-            _signOrderOn(router, merchantWallet, merchant, address(token), amount, orderId, createdAt, expiresAt);
+        bytes memory sig = _signOrderOn(
+            router, merchantWallet, merchant, merchant, address(token), amount, orderId, createdAt, expiresAt
+        );
 
         _mintAndApprove(payer, amount);
         vm.warp(uint256(expiresAt) + 1);
 
         vm.prank(payer);
         vm.expectRevert(BeamRouter.OrderExpired.selector);
-        router.pay(merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
+        router.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
     }
 
     function testPayAtExactExpirySucceeds() public {
@@ -274,14 +297,15 @@ contract BeamRouterSignedTest is Test {
         bytes32 orderId = keccak256("on-the-edge");
         uint64 createdAt = uint64(block.timestamp);
         uint64 expiresAt = createdAt + 60;
-        bytes memory sig =
-            _signOrderOn(router, merchantWallet, merchant, address(token), amount, orderId, createdAt, expiresAt);
+        bytes memory sig = _signOrderOn(
+            router, merchantWallet, merchant, merchant, address(token), amount, orderId, createdAt, expiresAt
+        );
 
         _mintAndApprove(payer, amount);
         vm.warp(uint256(expiresAt));
 
         vm.prank(payer);
-        router.pay(merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
+        router.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
     }
 
     function testPayInvalidExpiryReverts() public {
@@ -289,13 +313,14 @@ contract BeamRouterSignedTest is Test {
         bytes32 orderId = keccak256("zero-window");
         uint64 createdAt = uint64(block.timestamp);
         uint64 expiresAt = createdAt; // empty window
-        bytes memory sig =
-            _signOrderOn(router, merchantWallet, merchant, address(token), amount, orderId, createdAt, expiresAt);
+        bytes memory sig = _signOrderOn(
+            router, merchantWallet, merchant, merchant, address(token), amount, orderId, createdAt, expiresAt
+        );
 
         _mintAndApprove(payer, amount);
         vm.prank(payer);
         vm.expectRevert(BeamRouter.InvalidExpiry.selector);
-        router.pay(merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
+        router.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
     }
 
     // ========================================================
@@ -307,16 +332,17 @@ contract BeamRouterSignedTest is Test {
         bytes32 orderId = keccak256("replay");
         uint64 createdAt = uint64(block.timestamp);
         uint64 expiresAt = createdAt + DEFAULT_TTL;
-        bytes memory sig =
-            _signOrderOn(router, merchantWallet, merchant, address(token), amount, orderId, createdAt, expiresAt);
+        bytes memory sig = _signOrderOn(
+            router, merchantWallet, merchant, merchant, address(token), amount, orderId, createdAt, expiresAt
+        );
 
         _mintAndApprove(payer, amount * 2);
         vm.prank(payer);
-        router.pay(merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
+        router.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
 
         vm.prank(payer);
         vm.expectRevert(BeamRouter.DuplicateOrder.selector);
-        router.pay(merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
+        router.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
     }
 
     function testCrossRouterReplayReverts() public {
@@ -333,14 +359,15 @@ contract BeamRouterSignedTest is Test {
         uint64 createdAt = uint64(block.timestamp);
         uint64 expiresAt = createdAt + DEFAULT_TTL;
         // Sign for the ORIGINAL router.
-        bytes memory sig =
-            _signOrderOn(router, merchantWallet, merchant, address(token), amount, orderId, createdAt, expiresAt);
+        bytes memory sig = _signOrderOn(
+            router, merchantWallet, merchant, merchant, address(token), amount, orderId, createdAt, expiresAt
+        );
 
         _mintAndApprove(payer, amount);
         // Submit the same sig to the second router → digest mismatch → recover != merchant.
         vm.prank(payer);
         vm.expectRevert(BeamRouter.InvalidSignature.selector);
-        altRouter.pay(merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
+        altRouter.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
     }
 
     function testDomainSeparatorIsAddressBound() public {
