@@ -12,7 +12,7 @@
         "deployedBlock": 108923563,
         "deployGasUsed": 2026799,
         "version": "v1.4-per-order-receiver-2026-05-22",
-        "verified": false,
+        "verified": true,
         "source": "src/BeamRouter.sol",
         "previous": {
           "address": "0x67b7E4a8c77877C0FF51e03554B373211FbB1711",
