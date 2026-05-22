@@ -8,7 +8,7 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
  * @title BeamRouter
  * @author BeamPay Team
  * @notice BeamPay protocol core contract — permissionless on-chain payment router
- *         for whitelisted ERC20 tokens and native asset (ETH/BNB) — v1.0 (signed orders)
+ *         for whitelisted ERC20 tokens and native asset (ETH/BNB) — v1.4 (per-order receiver)
  *
  * @dev Design Principles:
  *      1. Funds Never Held in Contract
@@ -54,6 +54,17 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
  *             - token != NATIVE_TOKEN: require msg.value == 0; existing SafeERC20
  *               pull path unchanged.
  *         NATIVE_TOKEN still has to be added to the whitelist via addToken().
+ *
+ *     10. Per-Order Receiver (v1.4+)
+ *         `receiver` is signed into every Order (EIP-712) and is the sole payout
+ *         destination — both the principal leg and the H-06 fee-redirect fallback
+ *         target `receiver`, not `merchant`. `merchant` retains its semantics as
+ *         order-key namespace, refund() caller, and event index.
+ *         `merchantReceiver[merchant]` is a per-merchant UX hint that merchants
+ *         may rotate freely; pay() never reads it. Rotating the config does NOT
+ *         invalidate already-signed orders — each order pays to whichever
+ *         receiver was signed at order-creation time.
+ *         Invariant updated to: receiver_received + protocol_received == amount.
  */
 
 /// @notice Minimal ERC20 interface; intentionally untyped return to tolerate
@@ -136,8 +147,9 @@ contract BeamRouter is EIP712 {
 
     /// @notice EIP-712 typehash for the merchant-signed `Order` struct.
     /// @dev    Field order MUST match the front-end's `signTypedData` payload exactly.
+    ///         v1.4: `receiver` inserted immediately after `merchant`.
     bytes32 public constant ORDER_TYPEHASH = keccak256(
-        "Order(address merchant,address signer,address token,uint256 amount,bytes32 orderId,uint64 createdAt,uint64 expiresAt)"
+        "Order(address merchant,address receiver,address signer,address token,uint256 amount,bytes32 orderId,uint64 createdAt,uint64 expiresAt)"
     );
 
     // ========================================================
@@ -203,18 +215,20 @@ contract BeamRouter is EIP712 {
     ///      v1.0: dropped `exists` — `payer != address(0)` serves as the sentinel for
     ///            "order paid" (pay() always writes a non-zero msg.sender). Added
     ///            `signer`, `createdAt`, `expiresAt` from the EIP-712 signed payload.
-    ///            Storage layout (5 slots, optimized):
+    ///      v1.4: added `receiver` (signed in EIP-712). Storage layout (6 slots):
     ///              slot0: payer(20) + createdAt(8)
     ///              slot1: token(20)
     ///              slot2: amount(32)
     ///              slot3: refunded(32)
-    ///              slot4: signer(20) + expiresAt(8)
+    ///              slot4: receiver(20)
+    ///              slot5: signer(20) + expiresAt(8)
     struct OrderRecord {
         address payer; // 20B — non-zero iff order paid (replaces `exists`)
         uint64 createdAt; // 8B — timestamp from signed payload (packs with payer)
         address token; // 20B — token used for the order (refunds use same)
         uint256 amount; // 32B — original order amount (refund ceiling)
         uint256 refunded; // 32B — cumulative refunded amount
+        address receiver; // 20B — payout destination from signed payload (v1.4+)
         address signer; // 20B — recovered EIP-712 signer (merchant or delegate)
         uint64 expiresAt; // 8B — timestamp from signed payload (packs with signer)
     }
@@ -233,6 +247,20 @@ contract BeamRouter is EIP712 {
     /// @dev    Single delegate per merchant; calling `setSigner(addr)` overwrites the previous
     ///         delegate. Calling `setSigner(address(0))` clears delegation.
     mapping(address merchant => address signer) public merchantSigner;
+
+    // ========================================================
+    // ============ Merchant Receiver Hint (v1.4+) ============
+    // ========================================================
+
+    /// @notice Per-merchant default payout address — UX hint only.
+    /// @dev    pay() does NOT read this. The payout destination is the `receiver`
+    ///         field of the signed Order. This mapping exists so dashboards /
+    ///         off-chain order builders can fetch a sane default when creating
+    ///         a new order. Self-sovereign: only the merchant (msg.sender) writes
+    ///         its own slot. Rotating this value never invalidates already-signed
+    ///         orders — each order pays to whichever receiver was signed at
+    ///         order-creation time.
+    mapping(address merchant => address receiver) public merchantReceiver;
 
     // ========================================================
     // ============ Reentrancy Guard ==========================
@@ -286,19 +314,21 @@ contract BeamRouter is EIP712 {
     // ========================================================
 
     /// @notice Successful payment.
-    /// @param merchant         Merchant receiving the payment
+    /// @param merchant         Order owner (event-indexed; NOT the payout destination in v1.4+)
     /// @param orderId          Merchant-side order id
     /// @param payer            Address that paid
+    /// @param receiver         Payout destination signed into the order (v1.4+)
     /// @param token            Token used (NATIVE_TOKEN for native)
     /// @param amount           Pre-fee order amount
     /// @param fee              Protocol fee actually collected (= 0 on rate-zero or fail path)
     /// @param feeRecipient     Address fee was directed to (address(0) if no fee leg)
-    /// @param feeCollected     True if fee went to feeRecipient; false if redirected to merchant
+    /// @param feeCollected     True if fee went to feeRecipient; false if redirected to receiver
     /// @param timestamp        Block timestamp of the payment
     event Paid(
         address indexed merchant,
         bytes32 indexed orderId,
         address indexed payer,
+        address receiver,
         address token,
         uint256 amount,
         uint256 fee,
@@ -318,9 +348,17 @@ contract BeamRouter is EIP712 {
 
     event FeeTransferFailed(bytes32 indexed orderId, address token, uint256 fee, address feeRecipient);
     /// @notice Fee recipient was unreachable (blacklist, contract revert, etc.); fee was
-    ///         redirected to the merchant to preserve the H-06 invariant.
+    ///         redirected to the order's `receiver` to preserve the H-06 invariant.
+    /// @dev    Event name kept as `FeeRedirectedToMerchant` for indexer backward compatibility.
+    ///         In v1.4+ the redirected fee lands at `receiver` (the payout destination), not
+    ///         at the merchant — `merchant` is still emitted (indexed) as the order owner.
     event FeeRedirectedToMerchant(
-        bytes32 indexed orderId, address token, uint256 fee, address indexed feeRecipient, address indexed merchant
+        bytes32 indexed orderId,
+        address token,
+        uint256 fee,
+        address indexed feeRecipient,
+        address indexed merchant,
+        address receiver
     );
     event FeeChangeProposed(uint256 newRate, uint256 effectiveTime);
     event FeeChangeExecuted(uint256 newRate);
@@ -337,6 +375,12 @@ contract BeamRouter is EIP712 {
     /// @param oldSigner Previous delegate (address(0) if none).
     /// @param newSigner New delegate (address(0) clears delegation).
     event SignerUpdated(address indexed merchant, address indexed oldSigner, address indexed newSigner);
+
+    /// @notice Merchant updated its default payout-receiver hint (v1.4+).
+    /// @param merchant    Merchant whose receiver slot was written.
+    /// @param oldReceiver Previous default receiver (address(0) if none).
+    /// @param newReceiver New default receiver (address(0) clears the hint).
+    event ReceiverUpdated(address indexed merchant, address indexed oldReceiver, address indexed newReceiver);
 
     // ========================================================
     // ============ Modifiers =================================
@@ -413,9 +457,10 @@ contract BeamRouter is EIP712 {
     // ========================================================
 
     /**
-     * @notice Pay a merchant-signed order. Funds flow: payer -> merchant + payer -> feeRecipient,
+     * @notice Pay a merchant-signed order. Funds flow: payer -> receiver + payer -> feeRecipient,
      *         all inside this single call.
-     * @param merchant   Merchant receiving the payment.
+     * @param merchant   Order owner (event index, refund caller); NOT the payout destination in v1.4+.
+     * @param receiver   Payout destination signed into the order (v1.4+). Must be non-zero.
      * @param token      Token to pay with — must be whitelisted. Use NATIVE_TOKEN for native asset.
      * @param amount     Order amount (pre-fee).
      * @param orderId    Merchant-scoped order id; must be unique per merchant.
@@ -430,14 +475,18 @@ contract BeamRouter is EIP712 {
      *      - CEI: state write (orders[key] = ...) happens before any external call.
      *      - nonReentrant: defends against malicious token callbacks and native recipients.
      *      - SafeERC20: tolerates non-standard ERC20s (e.g. mainnet USDT).
-     *      - try-fee leg: blacklisted fee recipient does not abort the merchant leg.
-     *      - amount > fee: prevents merchant from receiving 0 due to rounding.
+     *      - try-fee leg: blacklisted fee recipient does not abort the receiver leg.
+     *      - amount > fee: prevents receiver from receiving 0 due to rounding.
      *      - Native path: msg.value == amount required; ERC20 path: msg.value == 0 required.
-     *      - EIP-712 signature binds (chainId, verifyingContract, merchant, signer, token,
-     *        amount, orderId, createdAt, expiresAt). Any tamper invalidates the signature.
+     *      - EIP-712 signature binds (chainId, verifyingContract, merchant, receiver, signer,
+     *        token, amount, orderId, createdAt, expiresAt). Any tamper invalidates the signature.
+     *      - `merchantReceiver[merchant]` is intentionally not consulted: `receiver` is the
+     *        single source of truth, fixed at signing time. Merchants may rotate the hint
+     *        without invalidating already-signed orders.
      */
     function pay(
         address merchant,
+        address receiver,
         address token,
         uint256 amount,
         bytes32 orderId,
@@ -448,6 +497,7 @@ contract BeamRouter is EIP712 {
     ) external payable nonReentrant {
         // ====== Input validation ======
         if (merchant == address(0)) revert ZeroAddress();
+        if (receiver == address(0)) revert ZeroAddress();
         if (!allowedTokens[token]) revert TokenNotAllowed();
         if (amount == 0) revert ZeroAmount();
         if (orderId == bytes32(0)) revert ZeroOrderId();
@@ -469,9 +519,10 @@ contract BeamRouter is EIP712 {
         // "only merchant may sign" — never matches a non-zero `signer` parameter.
         if (signer != merchant && signer != merchantSigner[merchant]) revert UnauthorizedSigner();
 
-        // ====== EIP-712 signature verification (v1.0 signed orders) ======
-        bytes32 structHash =
-            keccak256(abi.encode(ORDER_TYPEHASH, merchant, signer, token, amount, orderId, createdAt, expiresAt));
+        // ====== EIP-712 signature verification (v1.0 signed orders; v1.4 adds `receiver`) ======
+        bytes32 structHash = keccak256(
+            abi.encode(ORDER_TYPEHASH, merchant, receiver, signer, token, amount, orderId, createdAt, expiresAt)
+        );
         bytes32 digest = _hashTypedDataV4(structHash);
         if (digest.recover(signature) != signer) revert InvalidSignature();
 
@@ -494,25 +545,29 @@ contract BeamRouter is EIP712 {
             token: token,
             amount: amount,
             refunded: 0,
+            receiver: receiver,
             signer: signer,
             expiresAt: expiresAt
         });
 
-        // ====== Interactions (H-06 fix: fee-first try + redirect-to-merchant fallback) ======
+        // ====== Interactions (H-06 fix: fee-first try + redirect-to-receiver fallback) ======
         //
-        // v1.0/v1.1 transferred the merchant leg before the fee leg, and used try-pattern
+        // v1.0/v1.1 transferred the receiver leg before the fee leg, and used try-pattern
         // for the fee — a malicious payer could cap allowance/balance at `amount - fee`
         // so the fee transfer silently failed, bypassing the protocol fee.
         //
         // v1.2 inverted the order: speculative fee leg first; on failure, mandatory
-        // redirect to merchant; then mandatory main leg. Any path where the payer can't
-        // cover `amount` total reverts at the merchant leg.
+        // redirect to receiver; then mandatory main leg. Any path where the payer can't
+        // cover `amount` total reverts at the receiver leg.
         //
-        // Invariant under every successful path: merchant_received + protocol_received == amount.
+        // Invariant under every successful path: receiver_received + protocol_received == amount.
         //
         // v1.3 (native): same shape, but native uses .call{value:} instead of SafeERC20,
-        // and when the fee redirects to merchant we combine fee+(amount-fee) into one .call
+        // and when the fee redirects to receiver we combine fee+(amount-fee) into one .call
         // for `amount` (since no separate "allowance" exists for native).
+        //
+        // v1.4: `receiver` (from the signed order) replaces `merchant` as the payout target.
+        //       `merchant` is retained as the order owner / event index / refund caller.
 
         address feeTo = address(0);
         bool feeCollected = false;
@@ -532,32 +587,32 @@ contract BeamRouter is EIP712 {
             }
 
             if (!feeCollected) {
-                // Step 2 (fallback): fee recipient is unreachable — redirect fee to the merchant.
-                // For ERC20 this is a second pull from the payer's allowance; if H-06 attacker
+                // Step 2 (fallback): fee recipient is unreachable — redirect fee to the receiver.
+                // For ERC20 this is a second pull from the payer's allowance; if an H-06 attacker
                 // capped allowance, the safeTransferFrom here reverts the whole tx.
-                // For native the redirect is bundled into the merchant .call below.
+                // For native the redirect is bundled into the receiver .call below.
                 if (!isNative) {
-                    IERC20(token).safeTransferFrom(msg.sender, merchant, fee);
+                    IERC20(token).safeTransferFrom(msg.sender, receiver, fee);
                 }
                 emit FeeTransferFailed(orderId, token, fee, feeTo);
-                emit FeeRedirectedToMerchant(orderId, token, fee, feeTo, merchant);
+                emit FeeRedirectedToMerchant(orderId, token, fee, feeTo, merchant, receiver);
             }
         }
 
-        // ====== Step 3: mandatory merchant main leg ======
+        // ====== Step 3: mandatory receiver main leg ======
         // ERC20: always transfer `amount - fee`; combined with the conditional fee-redirect
-        //        leg above, total merchant inflow == feeCollected ? amount-fee : amount.
+        //        leg above, total receiver inflow == feeCollected ? amount-fee : amount.
         // Native: transfer (amount - fee) if fee was collected; otherwise transfer the full
         //        amount in one .call to fold the redirected fee into the same payment.
         if (isNative) {
-            uint256 merchantAmount = feeCollected ? amount - fee : amount;
-            (bool ok,) = merchant.call{ value: merchantAmount }("");
+            uint256 receiverAmount = feeCollected ? amount - fee : amount;
+            (bool ok,) = receiver.call{ value: receiverAmount }("");
             if (!ok) revert NativeTransferFailed();
         } else {
-            IERC20(token).safeTransferFrom(msg.sender, merchant, amount - fee);
+            IERC20(token).safeTransferFrom(msg.sender, receiver, amount - fee);
         }
 
-        emit Paid(merchant, orderId, msg.sender, token, amount, fee, feeTo, feeCollected, block.timestamp);
+        emit Paid(merchant, orderId, msg.sender, receiver, token, amount, fee, feeTo, feeCollected, block.timestamp);
     }
 
     // ========================================================
@@ -570,7 +625,8 @@ contract BeamRouter is EIP712 {
      * @param amount  Refund amount (partial refunds allowed; cumulative cap = order amount).
      *
      * @dev Security notes:
-     *      - msg.sender is implicitly the merchant (encoded into the order key).
+     *      - msg.sender is implicitly the merchant (encoded into the order key). Only the
+     *        merchant can refund — the order's `receiver` has no refund authority.
      *      - Token is read from the stored OrderRecord; merchant cannot specify a different
      *        token. (v1.3: dropped the redundant `token` parameter that audit fix M-07
      *        previously cross-checked — the stored value is the single source of truth.)
@@ -578,6 +634,8 @@ contract BeamRouter is EIP712 {
      *      - Protocol fee is never refunded (on-chain cost is irreversible; merchant absorbs).
      *      - Merchant must approve `amount` to this contract before calling (ERC20 path),
      *        or attach msg.value == amount (native path).
+     *      - v1.4: the order's `receiver` slot is intentionally ignored here. Refunds
+     *        always flow to the original payer, regardless of who got paid out by pay().
      */
     function refund(bytes32 orderId, uint256 amount) external payable nonReentrant {
         if (amount == 0) revert ZeroAmount();
@@ -775,6 +833,27 @@ contract BeamRouter is EIP712 {
         address oldSigner = merchantSigner[msg.sender];
         merchantSigner[msg.sender] = newSigner;
         emit SignerUpdated(msg.sender, oldSigner, newSigner);
+    }
+
+    // ========================================================
+    // ============ Merchant Receiver Hint (v1.4+) ============
+    // ========================================================
+    // Self-sovereign default-payout hint. Each merchant writes its own
+    // `merchantReceiver` slot directly — no governance, no timelock. pay()
+    // never reads this slot: the payout destination is the `receiver` field
+    // of the signed Order. Rotating this value lets dashboards / order
+    // builders pick up a new default for FUTURE orders without invalidating
+    // already-signed ones.
+
+    /// @notice Set or clear the merchant's default payout receiver (UX hint only).
+    /// @dev    msg.sender is the merchant. `newReceiver == address(0)` clears the hint.
+    ///         This is NOT validated against future order signatures — pay() uses the
+    ///         receiver embedded in the signed order, never this mapping.
+    /// @param newReceiver New default receiver (or address(0) to clear).
+    function setReceiver(address newReceiver) external {
+        address oldReceiver = merchantReceiver[msg.sender];
+        merchantReceiver[msg.sender] = newReceiver;
+        emit ReceiverUpdated(msg.sender, oldReceiver, newReceiver);
     }
 
     // ========================================================

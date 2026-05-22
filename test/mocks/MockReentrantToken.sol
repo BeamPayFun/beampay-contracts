@@ -63,6 +63,7 @@ contract MockReentrantToken {
             bytes32 reentrantOrderId = keccak256(abi.encodePacked(orderId, uint256(1)));
             try target.pay(
                 merchant,
+                merchant, // receiver (any non-zero works; nonReentrant fires before any other check)
                 address(this),
                 amount,
                 reentrantOrderId,
