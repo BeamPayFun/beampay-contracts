@@ -1,5 +1,5 @@
 {
-  "name": "beam-contracts",
+  "name": "beampay-contracts",
   "version": "0.1.0",
   "description": "BeamPay protocol contracts — permissionless on-chain payment router for whitelisted ERC20 tokens and native asset",
   "scripts": {
