@@ -4,13 +4,13 @@ pragma solidity ^0.8.28;
 import "forge-std/Test.sol";
 import { Vm } from "forge-std/Vm.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import { BeamRouter } from "../src/BeamRouter.sol";
+import { BeamPayRouter } from "../src/BeamPayRouter.sol";
 import { MockERC20 } from "./mocks/MockERC20.sol";
 
 /// @notice v1.0 signed-order semantics: EIP-712 signature, signer delegation, expiry window.
-///         These tests live next to BeamRouterTest.t.sol but focus only on the new surfaces.
-contract BeamRouterSignedTest is Test {
-    BeamRouter router;
+///         These tests live next to BeamPayRouterTest.t.sol but focus only on the new surfaces.
+contract BeamPayRouterSignedTest is Test {
+    BeamPayRouter router;
 
     address governance = makeAddr("governance");
     address payer = makeAddr("payer");
@@ -38,7 +38,7 @@ contract BeamRouterSignedTest is Test {
         address[] memory recipients = new address[](1);
         recipients[0] = feeRecipient;
 
-        router = new BeamRouter(governance, tokens, recipients, 10);
+        router = new BeamPayRouter(governance, tokens, recipients, 10);
     }
 
     // ========================================================
@@ -46,7 +46,7 @@ contract BeamRouterSignedTest is Test {
     // ========================================================
 
     function _signOrderOn(
-        BeamRouter target,
+        BeamPayRouter target,
         Vm.Wallet memory wallet,
         address merchantAddr,
         address receiverAddr,
@@ -88,7 +88,7 @@ contract BeamRouterSignedTest is Test {
         assertEq(router.merchantSigner(merchant), address(0));
 
         vm.expectEmit(true, true, true, true);
-        emit BeamRouter.SignerUpdated(merchant, address(0), delegateWallet.addr);
+        emit BeamPayRouter.SignerUpdated(merchant, address(0), delegateWallet.addr);
         vm.prank(merchant);
         router.setSigner(delegateWallet.addr);
 
@@ -101,7 +101,7 @@ contract BeamRouterSignedTest is Test {
         assertEq(router.merchantSigner(merchant), delegateWallet.addr);
 
         vm.expectEmit(true, true, true, true);
-        emit BeamRouter.SignerUpdated(merchant, delegateWallet.addr, address(0));
+        emit BeamPayRouter.SignerUpdated(merchant, delegateWallet.addr, address(0));
         vm.prank(merchant);
         router.setSigner(address(0));
 
@@ -137,7 +137,7 @@ contract BeamRouterSignedTest is Test {
         router.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
 
         // OrderRecord captures the v1.0 fields.
-        BeamRouter.OrderRecord memory rec = router.getOrder(merchant, orderId);
+        BeamPayRouter.OrderRecord memory rec = router.getOrder(merchant, orderId);
         assertTrue(rec.payer != address(0));
         assertEq(rec.payer, payer);
         assertEq(rec.signer, merchant);
@@ -183,7 +183,7 @@ contract BeamRouterSignedTest is Test {
 
         _mintAndApprove(payer, amount);
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.UnauthorizedSigner.selector);
+        vm.expectRevert(BeamPayRouter.UnauthorizedSigner.selector);
         router.pay(merchant, merchant, address(token), amount, orderId, delegateWallet.addr, createdAt, expiresAt, sig);
     }
 
@@ -204,7 +204,7 @@ contract BeamRouterSignedTest is Test {
 
         _mintAndApprove(payer, paidAmount);
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.InvalidSignature.selector);
+        vm.expectRevert(BeamPayRouter.InvalidSignature.selector);
         router.pay(merchant, merchant, address(token), paidAmount, orderId, merchant, createdAt, expiresAt, sig);
     }
 
@@ -220,7 +220,7 @@ contract BeamRouterSignedTest is Test {
 
         _mintAndApprove(payer, amount);
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.InvalidSignature.selector);
+        vm.expectRevert(BeamPayRouter.InvalidSignature.selector);
         router.pay(merchant, merchant, address(token), amount, paidOrderId, merchant, createdAt, expiresAt, sig);
     }
 
@@ -236,7 +236,7 @@ contract BeamRouterSignedTest is Test {
 
         _mintAndApprove(payer, amount);
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.UnauthorizedSigner.selector);
+        vm.expectRevert(BeamPayRouter.UnauthorizedSigner.selector);
         router.pay(merchant, merchant, address(token), amount, orderId, attackerWallet.addr, createdAt, expiresAt, sig);
     }
 
@@ -266,7 +266,7 @@ contract BeamRouterSignedTest is Test {
 
         _mintAndApprove(payer, amount);
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.InvalidSignature.selector);
+        vm.expectRevert(BeamPayRouter.InvalidSignature.selector);
         router.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
     }
 
@@ -287,7 +287,7 @@ contract BeamRouterSignedTest is Test {
         vm.warp(uint256(expiresAt) + 1);
 
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.OrderExpired.selector);
+        vm.expectRevert(BeamPayRouter.OrderExpired.selector);
         router.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
     }
 
@@ -319,7 +319,7 @@ contract BeamRouterSignedTest is Test {
 
         _mintAndApprove(payer, amount);
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.InvalidExpiry.selector);
+        vm.expectRevert(BeamPayRouter.InvalidExpiry.selector);
         router.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
     }
 
@@ -341,7 +341,7 @@ contract BeamRouterSignedTest is Test {
         router.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
 
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.DuplicateOrder.selector);
+        vm.expectRevert(BeamPayRouter.DuplicateOrder.selector);
         router.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
     }
 
@@ -352,7 +352,7 @@ contract BeamRouterSignedTest is Test {
         tokens[0] = address(token);
         address[] memory recipients = new address[](1);
         recipients[0] = feeRecipient;
-        BeamRouter altRouter = new BeamRouter(governance, tokens, recipients, 10);
+        BeamPayRouter altRouter = new BeamPayRouter(governance, tokens, recipients, 10);
 
         uint256 amount = 100_000;
         bytes32 orderId = keccak256("cross-router");
@@ -366,7 +366,7 @@ contract BeamRouterSignedTest is Test {
         _mintAndApprove(payer, amount);
         // Submit the same sig to the second router → digest mismatch → recover != merchant.
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.InvalidSignature.selector);
+        vm.expectRevert(BeamPayRouter.InvalidSignature.selector);
         altRouter.pay(merchant, merchant, address(token), amount, orderId, merchant, createdAt, expiresAt, sig);
     }
 
@@ -376,7 +376,7 @@ contract BeamRouterSignedTest is Test {
         tokens[0] = address(token);
         address[] memory recipients = new address[](1);
         recipients[0] = feeRecipient;
-        BeamRouter altRouter = new BeamRouter(governance, tokens, recipients, 10);
+        BeamPayRouter altRouter = new BeamPayRouter(governance, tokens, recipients, 10);
 
         assertTrue(router.DOMAIN_SEPARATOR() != altRouter.DOMAIN_SEPARATOR());
     }

@@ -2,13 +2,13 @@
 pragma solidity ^0.8.28;
 
 import "forge-std/Script.sol";
-import { BeamRouter } from "../src/BeamRouter.sol";
+import { BeamPayRouter } from "../src/BeamPayRouter.sol";
 
-/// @notice One-shot deploy of the non-upgradeable BeamRouter.
-/// @dev BeamRouter is intentionally NOT a UUPS proxy — once deployed it cannot be replaced
+/// @notice One-shot deploy of the non-upgradeable BeamPayRouter.
+/// @dev BeamPayRouter is intentionally NOT a UUPS proxy — once deployed it cannot be replaced
 ///      (CLAUDE.md invariant #3). All parameter changes flow through the 7-day Timelock baked
 ///      into the contract itself, not a proxy admin.
-contract BeamRouterScript is Script {
+contract BeamPayRouterScript is Script {
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
@@ -28,9 +28,9 @@ contract BeamRouterScript is Script {
         require(initialRecipients.length >= 1 && initialRecipients.length <= 20, "recipients out of range");
 
         vm.startBroadcast(deployerPrivateKey);
-        BeamRouter router = new BeamRouter(governance, initialTokens, initialRecipients, initialFeeRate);
+        BeamPayRouter router = new BeamPayRouter(governance, initialTokens, initialRecipients, initialFeeRate);
         vm.stopBroadcast();
 
-        console.log("BeamRouter:      %s", address(router));
+        console.log("BeamPayRouter:      %s", address(router));
     }
 }

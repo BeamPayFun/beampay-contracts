@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-BeamPay protocol contracts — a permissionless on-chain payment router for whitelisted ERC20 tokens and the chain's native asset (ETH/BNB). Deployable on BSC and Ethereum. `BeamRouter` is the only canonical contract; there is intentionally no proxy, no admin, no pause.
+BeamPay protocol contracts — a permissionless on-chain payment router for whitelisted ERC20 tokens and the chain's native asset (ETH/BNB). Deployable on BSC and Ethereum. `BeamPayRouter` is the only canonical contract; there is intentionally no proxy, no admin, no pause.
 
 **Chain targets:** BSC Mainnet (56) / Ethereum Mainnet (1) / BSC Testnet (97)
 
@@ -10,17 +10,17 @@ BeamPay protocol contracts — a permissionless on-chain payment router for whit
 
 - **Build/Test/Deploy:** Foundry (forge)
 - **Solidity:** 0.8.24, EVM target: cancun, optimizer runs: 200
-- **No proxy, no upgrades.** `BeamRouter` is deployed once and is immutable for code; only parameters change, via a 7-day Timelock inside the contract.
-- **Dependencies:** managed as git submodules in `lib/` (`forge-std` only — `BeamRouter.sol` is self-contained, no OpenZeppelin)
+- **No proxy, no upgrades.** `BeamPayRouter` is deployed once and is immutable for code; only parameters change, via a 7-day Timelock inside the contract.
+- **Dependencies:** managed as git submodules in `lib/` (`forge-std` only — `BeamPayRouter.sol` is self-contained, no OpenZeppelin)
 - **Code style:** Prettier with `prettier-plugin-solidity`, print width 120, 4-space indent
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/BeamRouter.sol` | Protocol core — `pay`, `refund`, fee/token/recipient governance, 7-day timelock |
-| `script/BeamRouter.s.sol` | One-shot deploy script (no proxy) |
-| `test/BeamRouterTest.t.sol` | Invariant + path tests against the load-bearing rules in CLAUDE.md |
+| `src/BeamPayRouter.sol` | Protocol core — `pay`, `refund`, fee/token/recipient governance, 7-day timelock |
+| `script/BeamPayRouter.s.sol` | One-shot deploy script (no proxy) |
+| `test/BeamPayRouterTest.t.sol` | Invariant + path tests against the load-bearing rules in CLAUDE.md |
 | `foundry.toml` | RPC endpoints, verifier, compiler |
 | `remappings.txt` | Import path aliases |
 | `.env.example` | Environment variable template |
@@ -43,14 +43,14 @@ forge fmt --check
 
 # Deploy (BSC mainnet)
 source .env
-forge script script/BeamRouter.s.sol:BeamRouterScript \
+forge script script/BeamPayRouter.s.sol:BeamPayRouterScript \
   --rpc-url $BSC_RPC_URL \
   --private-key $PRIVATE_KEY \
   --etherscan-api-key $BSCSCAN_API_KEY \
   --broadcast --verify -vvv
 
 # Verify manually
-forge verify-contract <address> BeamRouter \
+forge verify-contract <address> BeamPayRouter \
   --chain-id 56 --api-key $BSCSCAN_API_KEY
 ```
 
@@ -87,7 +87,7 @@ Mirrored from `../CLAUDE.md`. Each is a product property, not a code style prefe
 10. No `receive` / `fallback` — bare native transfers revert. Native value only enters via `pay()` / `refund()` and leaves in the same call; contract balance is always 0.
 11. Native asset support (v1.3+): sentinel `NATIVE_TOKEN = 0xEeee…EEeE` (1inch convention) represents the chain's native asset and must be whitelisted via `addToken()` like any ERC20. `pay`/`refund` are `payable`: `msg.value == amount` on the native path; `msg.value == 0` on the ERC20 path.
 
-When investigating "why is the code shaped this way", grep `BeamRouter.sol` for `H-0x` / `M-0x` / `L-0x` audit tags — those are intentional fix sites.
+When investigating "why is the code shaped this way", grep `BeamPayRouter.sol` for `H-0x` / `M-0x` / `L-0x` audit tags — those are intentional fix sites.
 
 ## Testing Patterns
 

@@ -5,7 +5,7 @@
   "deployer": "0x6bc3C40F13eF073E10dF0647Af5672d79b79f5C0",
   "contracts": {
     "router": {
-      "BeamRouter": {
+      "BeamPayRouter": {
         "address": "0x9690bc8df73C32b8DAA3f132012aeAFcaF112CAa",
         "deployTxHash": "0xe27d8bb26a1ac598f323039680d082d263ec6b41ef1e42cf7cc6c221aa2ba77f",
         "deployedAt": "2026-05-22",
@@ -13,7 +13,7 @@
         "deployGasUsed": 2026799,
         "version": "v1.4-per-order-receiver-2026-05-22",
         "verified": true,
-        "source": "src/BeamRouter.sol",
+        "source": "src/BeamPayRouter.sol",
         "previous": {
           "address": "0x67b7E4a8c77877C0FF51e03554B373211FbB1711",
           "deployTxHash": "0x79013177255eba549b557165030cfa4c86cca53a7fb6979000406604276e0cfe",

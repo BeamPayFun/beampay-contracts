@@ -3,12 +3,12 @@ pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import { BeamRouter } from "../../src/BeamRouter.sol";
+import { BeamPayRouter } from "../../src/BeamPayRouter.sol";
 import { MockERC20 } from "../mocks/MockERC20.sol";
 
 /// @notice Handler that exercises `pay()` with fuzzed arguments.
-contract BeamRouterHandler is Test {
-    BeamRouter public router;
+contract BeamPayRouterHandler is Test {
+    BeamPayRouter public router;
     MockERC20 public token;
     address public feeRecipient;
 
@@ -23,7 +23,7 @@ contract BeamRouterHandler is Test {
     Payment[] public payments;
     uint256 public orderNonce;
 
-    constructor(BeamRouter _router, MockERC20 _token, address _feeRecipient) {
+    constructor(BeamPayRouter _router, MockERC20 _token, address _feeRecipient) {
         router = _router;
         token = _token;
         feeRecipient = _feeRecipient;
@@ -102,9 +102,9 @@ contract BeamRouterHandler is Test {
 
 /// @notice Invariant test verifying the ledger invariant:
 ///         merchant_received + protocol_received == amount for every pay() call.
-contract BeamRouterInvariant is Test {
-    BeamRouter public router;
-    BeamRouterHandler public handler;
+contract BeamPayRouterInvariant is Test {
+    BeamPayRouter public router;
+    BeamPayRouterHandler public handler;
     MockERC20 public token;
 
     address governance = makeAddr("governance");
@@ -119,8 +119,8 @@ contract BeamRouterInvariant is Test {
         address[] memory recipients = new address[](1);
         recipients[0] = feeRecipient;
 
-        router = new BeamRouter(governance, tokens, recipients, 10);
-        handler = new BeamRouterHandler(router, token, feeRecipient);
+        router = new BeamPayRouter(governance, tokens, recipients, 10);
+        handler = new BeamPayRouterHandler(router, token, feeRecipient);
 
         targetContract(address(handler));
     }
