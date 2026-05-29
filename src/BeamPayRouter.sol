@@ -5,7 +5,7 @@ import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 /**
- * @title BeamRouter
+ * @title BeamPayRouter
  * @author BeamPay Team
  * @notice BeamPay protocol core contract — permissionless on-chain payment router
  *         for whitelisted ERC20 tokens and native asset (ETH/BNB) — v1.4 (per-order receiver)
@@ -110,7 +110,7 @@ library SafeERC20 {
 }
 
 /**
- * @title BeamRouter
+ * @title BeamPayRouter
  * @notice BeamPay protocol main contract. Merchants get paid via pay(); merchants
  *         issue refunds via refund(). No admin, no pause, no emergency.
  *
@@ -118,7 +118,7 @@ library SafeERC20 {
  *      multisig, no admin backdoor**. Once deployed, pay() is callable forever.
  *      Every parameter change waits out the 7-day timelock.
  */
-contract BeamRouter is EIP712 {
+contract BeamPayRouter is EIP712 {
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
@@ -420,7 +420,7 @@ contract BeamRouter is EIP712 {
         address[] memory _initialTokens,
         address[] memory _initialRecipients,
         uint256 _initialFeeRate
-    ) EIP712("BeamRouter", "1") {
+    ) EIP712("BeamPayRouter", "1") {
         // Audit fix H-05: validate constructor parameters.
         if (_governance == address(0)) revert ZeroAddress();
         if (_initialFeeRate > FEE_RATE_HARD_LIMIT) revert RateExceedsHardLimit();

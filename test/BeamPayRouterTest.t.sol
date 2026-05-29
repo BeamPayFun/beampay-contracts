@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 import "forge-std/Test.sol";
 import { Vm } from "forge-std/Vm.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import { BeamRouter } from "../src/BeamRouter.sol";
+import { BeamPayRouter } from "../src/BeamPayRouter.sol";
 import { MockERC20 } from "./mocks/MockERC20.sol";
 import { MockBadERC20 } from "./mocks/MockBadERC20.sol";
 import { MockFeeFailingToken } from "./mocks/MockFeeFailingToken.sol";
@@ -21,8 +21,8 @@ import { MockReentrantToken } from "./mocks/MockReentrantToken.sol";
 ///         8. Refund constraints — token match, payer from OrderRecord, cumulative <= amount.
 ///         9. Two-step governance transfer + renounceGovernance.
 ///        10. No receive/fallback — direct ETH transfer reverts.
-contract BeamRouterTest is Test {
-    BeamRouter router;
+contract BeamPayRouterTest is Test {
+    BeamPayRouter router;
 
     address governance = makeAddr("governance");
     address payer = makeAddr("payer");
@@ -46,7 +46,7 @@ contract BeamRouterTest is Test {
         address[] memory recipients = new address[](1);
         recipients[0] = feeRecipient;
 
-        router = new BeamRouter(governance, tokens, recipients, 10);
+        router = new BeamPayRouter(governance, tokens, recipients, 10);
     }
 
     // ========================================================
@@ -56,7 +56,7 @@ contract BeamRouterTest is Test {
     // ========================================================
 
     function _signOrderOn(
-        BeamRouter target,
+        BeamPayRouter target,
         Vm.Wallet memory wallet,
         address merchantAddr,
         address receiverAddr,
@@ -127,7 +127,7 @@ contract BeamRouterTest is Test {
 
         vm.prank(payer);
         vm.expectEmit(true, true, true, false);
-        emit BeamRouter.Paid(
+        emit BeamPayRouter.Paid(
             merchant, orderId, payer, merchant, address(token), amount, fee, feeRecipient, true, block.timestamp
         );
         router.pay(merchant, merchant, address(token), amount, orderId, _s, _ca, _ea, _sig);
@@ -136,7 +136,7 @@ contract BeamRouterTest is Test {
         assertEq(token.balanceOf(feeRecipient), fee);
         assertEq(token.balanceOf(address(router)), 0);
 
-        BeamRouter.OrderRecord memory rec = router.getOrder(merchant, orderId);
+        BeamPayRouter.OrderRecord memory rec = router.getOrder(merchant, orderId);
         assertTrue(rec.payer != address(0));
         assertEq(rec.payer, payer);
         assertEq(rec.token, address(token));
@@ -157,7 +157,7 @@ contract BeamRouterTest is Test {
         router.pay(merchant, merchant, address(token), amount, orderId, _s, _ca, _ea, _sig);
 
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.DuplicateOrder.selector);
+        vm.expectRevert(BeamPayRouter.DuplicateOrder.selector);
         router.pay(merchant, merchant, address(token), amount, orderId, _s, _ca, _ea, _sig);
     }
 
@@ -195,7 +195,7 @@ contract BeamRouterTest is Test {
         badToken.approve(address(router), 100_000);
 
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.TokenNotAllowed.selector);
+        vm.expectRevert(BeamPayRouter.TokenNotAllowed.selector);
         router.pay(merchant, merchant, address(badToken), 100_000, orderId, merchant, t, t + 1, "");
     }
 
@@ -218,7 +218,9 @@ contract BeamRouterTest is Test {
 
         vm.prank(payer);
         vm.expectEmit(true, false, false, true);
-        emit BeamRouter.FeeRedirectedToMerchant(orderId, address(feeFailToken), fee, feeRecipient, merchant, merchant);
+        emit BeamPayRouter.FeeRedirectedToMerchant(
+            orderId, address(feeFailToken), fee, feeRecipient, merchant, merchant
+        );
         router.pay(merchant, merchant, address(feeFailToken), amount, orderId, _s, _ca, _ea, _sig);
 
         // Merchant receives both the principal and the redirected fee
@@ -249,7 +251,7 @@ contract BeamRouterTest is Test {
 
         vm.prank(merchant);
         vm.expectEmit(true, true, true, false);
-        emit BeamRouter.Refunded(orderId, merchant, payer, address(token), refundAmount, block.timestamp);
+        emit BeamPayRouter.Refunded(orderId, merchant, payer, address(token), refundAmount, block.timestamp);
         router.refund(orderId, refundAmount);
 
         assertEq(token.balanceOf(payer), refundAmount);
@@ -281,7 +283,7 @@ contract BeamRouterTest is Test {
 
         // Second refund exceeds remaining
         vm.prank(merchant);
-        vm.expectRevert(BeamRouter.RefundExceedsOrder.selector);
+        vm.expectRevert(BeamPayRouter.RefundExceedsOrder.selector);
         router.refund(orderId, amount / 2 + 1);
     }
 
@@ -301,7 +303,7 @@ contract BeamRouterTest is Test {
         token.approve(address(router), amount);
 
         vm.prank(other);
-        vm.expectRevert(BeamRouter.OrderNotPaid.selector);
+        vm.expectRevert(BeamPayRouter.OrderNotPaid.selector);
         router.refund(orderId, amount);
     }
 
@@ -330,7 +332,7 @@ contract BeamRouterTest is Test {
         vm.prank(governance);
         router.proposeFeeChange(5);
 
-        vm.expectRevert(BeamRouter.TimelockNotExpired.selector);
+        vm.expectRevert(BeamPayRouter.TimelockNotExpired.selector);
         router.executeFeeChange();
     }
 
@@ -347,7 +349,7 @@ contract BeamRouterTest is Test {
 
     function testProposeFeeChangeExceedsHardLimitReverts() public {
         vm.prank(governance);
-        vm.expectRevert(BeamRouter.RateExceedsHardLimit.selector);
+        vm.expectRevert(BeamPayRouter.RateExceedsHardLimit.selector);
         router.proposeFeeChange(11);
     }
 
@@ -364,13 +366,13 @@ contract BeamRouterTest is Test {
 
     function testAddTokenZeroAddressReverts() public {
         vm.prank(governance);
-        vm.expectRevert(BeamRouter.ZeroAddress.selector);
+        vm.expectRevert(BeamPayRouter.ZeroAddress.selector);
         router.addToken(address(0));
     }
 
     function testAddTokenDuplicateReverts() public {
         vm.prank(governance);
-        vm.expectRevert(BeamRouter.AlreadyAllowed.selector);
+        vm.expectRevert(BeamPayRouter.AlreadyAllowed.selector);
         router.addToken(address(token));
     }
 
@@ -401,13 +403,13 @@ contract BeamRouterTest is Test {
         router.addFeeRecipient(newRecipient);
 
         vm.prank(governance);
-        vm.expectRevert(BeamRouter.AddressMismatch.selector);
+        vm.expectRevert(BeamPayRouter.AddressMismatch.selector);
         router.removeFeeRecipient(0, makeAddr("wrong"));
     }
 
     function testRemoveLastFeeRecipientReverts() public {
         vm.prank(governance);
-        vm.expectRevert(BeamRouter.MustKeepAtLeastOne.selector);
+        vm.expectRevert(BeamPayRouter.MustKeepAtLeastOne.selector);
         router.removeFeeRecipient(0, feeRecipient);
     }
 
@@ -433,7 +435,7 @@ contract BeamRouterTest is Test {
         router.transferGovernance(newGov);
 
         vm.prank(other);
-        vm.expectRevert(BeamRouter.NotPendingGovernance.selector);
+        vm.expectRevert(BeamPayRouter.NotPendingGovernance.selector);
         router.acceptGovernance();
     }
 
@@ -526,7 +528,7 @@ contract BeamRouterTest is Test {
         assertEq(feeRecipient.balance, fee);
         assertEq(address(router).balance, 0);
 
-        BeamRouter.OrderRecord memory rec = router.getOrder(merchant, orderId);
+        BeamPayRouter.OrderRecord memory rec = router.getOrder(merchant, orderId);
         assertTrue(rec.payer != address(0));
         assertEq(rec.payer, payer);
         assertEq(rec.token, native);
@@ -543,7 +545,7 @@ contract BeamRouterTest is Test {
 
         vm.deal(payer, amount);
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.IncorrectNativeValue.selector);
+        vm.expectRevert(BeamPayRouter.IncorrectNativeValue.selector);
         router.pay{ value: amount - 1 }(merchant, merchant, native, amount, orderId, merchant, t, t + 1, "");
     }
 
@@ -559,7 +561,7 @@ contract BeamRouterTest is Test {
 
         vm.deal(payer, 1 ether);
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.UnexpectedNativeValue.selector);
+        vm.expectRevert(BeamPayRouter.UnexpectedNativeValue.selector);
         router.pay{ value: 1 wei }(merchant, merchant, address(token), amount, orderId, merchant, t, t + 1, "");
     }
 
@@ -571,7 +573,7 @@ contract BeamRouterTest is Test {
         address[] memory tokens = new address[](0);
         address[] memory recipients = new address[](1);
         recipients[0] = address(blockedRecipient);
-        BeamRouter altRouter = new BeamRouter(governance, tokens, recipients, 10);
+        BeamPayRouter altRouter = new BeamPayRouter(governance, tokens, recipients, 10);
         address native = altRouter.NATIVE_TOKEN();
         vm.prank(governance);
         altRouter.addToken(native);
@@ -586,7 +588,7 @@ contract BeamRouterTest is Test {
         vm.deal(payer, amount);
         vm.prank(payer);
         vm.expectEmit(true, false, false, true);
-        emit BeamRouter.FeeRedirectedToMerchant(orderId, native, fee, address(blockedRecipient), merchant, merchant);
+        emit BeamPayRouter.FeeRedirectedToMerchant(orderId, native, fee, address(blockedRecipient), merchant, merchant);
         altRouter.pay{ value: amount }(merchant, merchant, native, amount, orderId, _s, _ca, _ea, _sig);
 
         // Merchant gets the full amount (principal + redirected fee).
@@ -613,7 +615,7 @@ contract BeamRouterTest is Test {
         uint256 payerBalanceBefore = payer.balance;
         vm.prank(merchant);
         vm.expectEmit(true, true, true, false);
-        emit BeamRouter.Refunded(orderId, merchant, payer, native, refundAmount, block.timestamp);
+        emit BeamPayRouter.Refunded(orderId, merchant, payer, native, refundAmount, block.timestamp);
         router.refund{ value: refundAmount }(orderId, refundAmount);
 
         assertEq(payer.balance, payerBalanceBefore + refundAmount);
@@ -637,7 +639,7 @@ contract BeamRouterTest is Test {
 
         vm.deal(merchant, 1 ether);
         vm.prank(merchant);
-        vm.expectRevert(BeamRouter.IncorrectNativeValue.selector);
+        vm.expectRevert(BeamPayRouter.IncorrectNativeValue.selector);
         router.refund{ value: 0.2 ether }(orderId, 0.3 ether);
     }
 
@@ -658,7 +660,7 @@ contract BeamRouterTest is Test {
 
         vm.deal(merchant, 1 ether);
         vm.prank(merchant);
-        vm.expectRevert(BeamRouter.UnexpectedNativeValue.selector);
+        vm.expectRevert(BeamPayRouter.UnexpectedNativeValue.selector);
         router.refund{ value: 1 wei }(orderId, amount / 2);
     }
 
@@ -704,7 +706,7 @@ contract BeamRouterTest is Test {
         assertEq(token.balanceOf(altReceiver), 0, "config receiver must be ignored by pay()");
         assertEq(token.balanceOf(merchant), 0, "merchant must not receive in v1.4+");
 
-        BeamRouter.OrderRecord memory rec = router.getOrder(merchant, orderId);
+        BeamPayRouter.OrderRecord memory rec = router.getOrder(merchant, orderId);
         assertEq(rec.receiver, other, "OrderRecord persists signed receiver");
     }
 
@@ -744,7 +746,7 @@ contract BeamRouterTest is Test {
     function testSetReceiverEmitsAndPersists() public {
         address altReceiver = makeAddr("altReceiver");
         vm.expectEmit(true, true, true, true);
-        emit BeamRouter.ReceiverUpdated(merchant, address(0), altReceiver);
+        emit BeamPayRouter.ReceiverUpdated(merchant, address(0), altReceiver);
         vm.prank(merchant);
         router.setReceiver(altReceiver);
         assertEq(router.merchantReceiver(merchant), altReceiver);
@@ -771,7 +773,7 @@ contract BeamRouterTest is Test {
         token.approve(address(router), amount);
 
         vm.prank(payer);
-        vm.expectRevert(BeamRouter.ZeroAddress.selector);
+        vm.expectRevert(BeamPayRouter.ZeroAddress.selector);
         router.pay(merchant, address(0), address(token), amount, orderId, _s, _ca, _ea, _sig);
     }
 
@@ -795,7 +797,7 @@ contract BeamRouterTest is Test {
         vm.prank(other);
         token.approve(address(router), amount);
         vm.prank(other);
-        vm.expectRevert(BeamRouter.OrderNotPaid.selector);
+        vm.expectRevert(BeamPayRouter.OrderNotPaid.selector);
         router.refund(orderId, amount / 2);
 
         // Merchant refunds — funds flow to payer, not receiver.
@@ -823,7 +825,7 @@ contract BeamRouterTest is Test {
 
         vm.prank(payer);
         vm.expectEmit(true, true, true, true);
-        emit BeamRouter.Paid(
+        emit BeamPayRouter.Paid(
             merchant, orderId, payer, other, address(token), amount, fee, feeRecipient, true, block.timestamp
         );
         router.pay(merchant, other, address(token), amount, orderId, _s, _ca, _ea, _sig);
@@ -853,7 +855,7 @@ contract BeamRouterTest is Test {
         address[] memory tokens = new address[](0);
         address[] memory recipients = new address[](1);
         recipients[0] = address(blocked);
-        BeamRouter alt = new BeamRouter(governance, tokens, recipients, 10);
+        BeamPayRouter alt = new BeamPayRouter(governance, tokens, recipients, 10);
         address native = alt.NATIVE_TOKEN();
         vm.prank(governance);
         alt.addToken(native);
@@ -867,7 +869,7 @@ contract BeamRouterTest is Test {
         vm.deal(payer, amount);
         vm.prank(payer);
         vm.expectEmit(true, false, false, true);
-        emit BeamRouter.FeeRedirectedToMerchant(orderId, native, fee, address(blocked), merchant, other);
+        emit BeamPayRouter.FeeRedirectedToMerchant(orderId, native, fee, address(blocked), merchant, other);
         alt.pay{ value: amount }(merchant, other, native, amount, orderId, _s, _ca, _ea, _sig);
 
         assertEq(other.balance, amount, "receiver gets principal + redirected fee");

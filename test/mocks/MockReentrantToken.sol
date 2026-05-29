@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import { BeamRouter } from "../../src/BeamRouter.sol";
+import { BeamPayRouter } from "../../src/BeamPayRouter.sol";
 
 /// @notice Malicious ERC20 mock that reenters pay() or refund() during transferFrom.
-/// @dev  Used to verify the nonReentrant guard on BeamRouter.
+/// @dev  Used to verify the nonReentrant guard on BeamPayRouter.
 contract MockReentrantToken {
     string public name = "Reentrant";
     string public symbol = "RNT";
@@ -14,14 +14,14 @@ contract MockReentrantToken {
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
 
-    BeamRouter public target;
+    BeamPayRouter public target;
     address public merchant;
     bytes32 public orderId;
     bool public reentered;
 
     constructor() { }
 
-    function setTarget(BeamRouter _target) external {
+    function setTarget(BeamPayRouter _target) external {
         target = _target;
     }
 

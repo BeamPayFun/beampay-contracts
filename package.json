@@ -13,7 +13,7 @@
     "fmt:check": "forge fmt --check",
     "check": "prettier --check 'src/**/*.sol' 'script/**/*.sol' 'test/**/*.sol'",
     "fix": "prettier --write 'src/**/*.sol' 'script/**/*.sol' 'test/**/*.sol'",
-    "slither": "slither src/BeamRouter.sol --config-file slither.config.json",
+    "slither": "slither src/BeamPayRouter.sol --config-file slither.config.json",
     "solhint": "solhint 'src/**/*.sol' 'script/**/*.sol' 'test/**/*.sol'",
     "prepare": "husky"
   },
