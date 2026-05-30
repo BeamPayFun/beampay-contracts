@@ -1,0 +1,36 @@
+{
+  "chainId": 56,
+  "chainName": "BSC Mainnet",
+  "explorer": "https://bscscan.com",
+  "deployer": "0x6bc3C40F13eF073E10dF0647Af5672d79b79f5C0",
+  "contracts": {
+    "router": {
+      "BeamPayRouter": {
+        "address": "0xBEA93fceFb115b22a3D6c714Ee815B359e2AAbaa",
+        "deployTxHash": "0xbac1099bf0d053f022820d3d5d930edfcd6dff27c62c2e930eb952045579ef72",
+        "deployedAt": "2026-05-30",
+        "deployedBlock": 101249204,
+        "version": "v1.4-create3-vanity-2026-05-30",
+        "verified": true,
+        "source": "src/BeamPayRouter.sol",
+        "deployMethod": "CreateX CREATE3 (factory 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed)",
+        "salt": "0x6bc3c40f13ef073e10df0647af5672d79b79f5c00000000000000000000002ab",
+        "note": "Same address on every chain (BSC + ETH + testnet). See ADR-0008.",
+        "constructor": {
+          "governance": "0x6bc3C40F13eF073E10dF0647Af5672d79b79f5C0",
+          "initialFeeRateBps": 0,
+          "initialTokens": [
+            "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+            "0x55d398326f99059fF775485246999027B3197955",
+            "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
+          ],
+          "initialRecipients": [
+            "0x6bc3C40F13eF073E10dF0647Af5672d79b79f5C0",
+            "0x8C145fE72884574d811ab25119dA458a0C1a72E4"
+          ],
+          "tokenLegend": ["NATIVE (BNB)", "USDT (18 dec)", "USDC (18 dec)"]
+        }
+      }
+    }
+  }
+}

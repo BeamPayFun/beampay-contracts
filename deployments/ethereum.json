@@ -1,0 +1,36 @@
+{
+  "chainId": 1,
+  "chainName": "Ethereum Mainnet",
+  "explorer": "https://etherscan.io",
+  "deployer": "0x6bc3C40F13eF073E10dF0647Af5672d79b79f5C0",
+  "contracts": {
+    "router": {
+      "BeamPayRouter": {
+        "address": "0xBEA93fceFb115b22a3D6c714Ee815B359e2AAbaa",
+        "deployTxHash": "0xe03c46051c7b49db9b422a2b2536e3ae86f86bbc5e654b90d47f41118def5904",
+        "deployedAt": "2026-05-30",
+        "deployedBlock": 25206066,
+        "version": "v1.4-create3-vanity-2026-05-30",
+        "verified": true,
+        "source": "src/BeamPayRouter.sol",
+        "deployMethod": "CreateX CREATE3 (factory 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed)",
+        "salt": "0x6bc3c40f13ef073e10df0647af5672d79b79f5c00000000000000000000002ab",
+        "note": "Same address on every chain (BSC + ETH + testnet). See ADR-0008.",
+        "constructor": {
+          "governance": "0x6bc3C40F13eF073E10dF0647Af5672d79b79f5C0",
+          "initialFeeRateBps": 0,
+          "initialTokens": [
+            "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+            "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+            "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          ],
+          "initialRecipients": [
+            "0x6bc3C40F13eF073E10dF0647Af5672d79b79f5C0",
+            "0x8C145fE72884574d811ab25119dA458a0C1a72E4"
+          ],
+          "tokenLegend": ["NATIVE (ETH)", "USDT (6 dec)", "USDC (6 dec)"]
+        }
+      }
+    }
+  }
+}
