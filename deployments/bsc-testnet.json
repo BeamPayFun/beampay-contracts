@@ -6,15 +6,24 @@
   "contracts": {
     "router": {
       "BeamPayRouter": {
-        "address": "0x012420A017Bd1134e76C59b41B307B4f56F89e89",
-        "deployTxHash": "0x13a74074ad22f5f48840c697bc7a527f0bdaa7309b3895ebbcc3e0a5d95bc63d",
-        "deployedAt": "2026-05-29",
-        "deployedBlock": 110210355,
-        "deployGasUsed": 2026847,
-        "version": "v1.4-renamed-BeamPayRouter-2026-05-29",
+        "address": "0xBEA93fceFb115b22a3D6c714Ee815B359e2AAbaa",
+        "deployTxHash": "0xbf44525708c4c36ed94c0b943092f28ff1487a8a9158fba54614ce675ddce499",
+        "deployedAt": "2026-05-30",
+        "version": "v1.4-create3-vanity-2026-05-30",
         "verified": true,
         "source": "src/BeamPayRouter.sol",
+        "deployMethod": "CreateX CREATE3 (factory 0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed)",
+        "salt": "0x6bc3c40f13ef073e10df0647af5672d79b79f5c00000000000000000000002ab",
+        "note": "Same address on every chain (testnet + BSC + ETH). See ADR-0008. Supersedes plain-CREATE address below.",
         "previous": {
+          "address": "0x012420A017Bd1134e76C59b41B307B4f56F89e89",
+          "deployTxHash": "0x13a74074ad22f5f48840c697bc7a527f0bdaa7309b3895ebbcc3e0a5d95bc63d",
+          "deployedAt": "2026-05-29",
+          "deployedBlock": 110210355,
+          "deployGasUsed": 2026847,
+          "version": "v1.4-renamed-BeamPayRouter-2026-05-29",
+          "deployMethod": "plain CREATE (deprecated for prod)",
+          "previous": {
           "address": "0x9690bc8df73C32b8DAA3f132012aeAFcaF112CAa",
           "deployTxHash": "0xe27d8bb26a1ac598f323039680d082d263ec6b41ef1e42cf7cc6c221aa2ba77f",
           "deployedAt": "2026-05-22",
@@ -32,6 +41,7 @@
             "deployTxHash": "0xa105dc9d73717de09df486c6db4b9350fa1dd80e7ef969702bdf7b4b417a7f75",
             "deployedAt": "2026-05-20",
             "version": "v1.3"
+          }
           }
           }
         },
