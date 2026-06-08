@@ -732,6 +732,13 @@ contract BeamPayRouter is EIP712 {
     //   issue is handled by the token itself or by merchant-side UI changes —
     //   not by this contract.
 
+    /**
+     * @notice Whitelist a token (or the native asset) so it can be used in pay().
+     * @dev Add-only: there is intentionally no removeToken/disableToken (see note above).
+     *      Pass NATIVE_TOKEN to enable native (ETH/BNB) payments. Reverts on zero address
+     *      or a token that is already allowed.
+     * @param token Token address to allow, or NATIVE_TOKEN for the chain's native asset.
+     */
     function addToken(address token) external onlyGov {
         if (token == address(0)) revert ZeroAddress();
         if (allowedTokens[token]) revert AlreadyAllowed();
