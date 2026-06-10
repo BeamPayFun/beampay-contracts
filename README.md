@@ -13,7 +13,7 @@ English | [简体中文](./README.zh-CN.md)
 | Traditional payment rail | BeamPay |
 |---|---|
 | Funds enter the platform's account first, then settle to the merchant | Funds go from the payer **directly to the order's signed payout address (`receiver`, usually the merchant's wallet)** — the contract never touches a cent |
-| Platform can freeze, pause, change the rules | Contract has **no admin, no pause button, no delisting** — fixed once deployed |
+| Platform can freeze, pause, change the rules | Contract has **no custodial admin, no pause button, no delisting** — governance can only add tokens / recipients and tune the fee within the hard cap |
 | Fee rate adjustable at any time | Fee ceiling **hard-coded at 0.1%** (cannot be exceeded at the contract level) |
 | Refunds depend on customer support | Merchants issue partial / full refunds directly on-chain |
 
@@ -32,7 +32,7 @@ Payer wallet → protocol fee recipient (fee)
 
 > `receiver` is the payout address the merchant signs into each order at creation time (per-order since v1.4) — typically the merchant's own wallet.
 
-The moment the transaction completes, **the contract balance is 0**. Which means:
+The moment the transaction completes, **the router retains none of the payment** — funds enter and leave in the same transaction. Which means:
 - Platform rug-pull? — there's no money in the contract to run away with
 - Contract gets hacked? — there's no money in the contract to steal
 - Regulator freezes the contract? — there is no "freeze" function to invoke
@@ -83,7 +83,7 @@ Merchants issue refunds on-chain via `refund(orderId, amount)`:
 
 The router is deployed via **CREATE3 (CreateX factory) with a fixed salt**, giving it **the exact same address on every chain**.
 
-Native assets (BNB/ETH) are represented by the conventional sentinel address `0xEeee...EEeE` and behave exactly like an ERC20.
+Native assets (BNB/ETH) are represented by the conventional sentinel address `0xEeee...EEeE` and are whitelisted and settled like any ERC20 (the native path additionally requires `msg.value == amount`).
 
 ---
 
@@ -227,15 +227,14 @@ Copy `.env.example` to `.env` and fill in:
 
 ```bash
 PRIVATE_KEY=             # deployer private key
-BSCSCAN_API_KEY=         # contract verification
-ETHERSCAN_API_KEY=
+ETHERSCAN_API_KEY=       # explorer verification (Etherscan V2 unified key — ETH + BSC + testnet)
 BSC_RPC_URL=             # BSC mainnet RPC
 BSC_TESTNET_RPC_URL=
 ETH_RPC_URL=
 GOVERNANCE=              # governance multisig (constructor arg)
 INITIAL_TOKENS=          # initial token whitelist (comma-separated)
 INITIAL_RECIPIENTS=      # initial fee recipients (1..20, comma-separated)
-INITIAL_FEE_RATE=10      # bps; must be <= 10
+INITIAL_FEE_RATE=10      # bps; must be <= 10 (testnet runs 10; mainnet was deployed with 0)
 ```
 
 ### Deploy (CREATE3, same address cross-chain)
@@ -252,7 +251,7 @@ forge script script/MineSalt.s.sol
 forge script script/DeployCreate3.s.sol \
   --rpc-url $BSC_RPC_URL \
   --private-key $PRIVATE_KEY \
-  --etherscan-api-key $BSCSCAN_API_KEY \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
   --broadcast --verify -vvv
 ```
 
@@ -262,7 +261,7 @@ forge script script/DeployCreate3.s.sol \
 
 ```bash
 forge verify-contract <address> BeamPayRouter \
-  --chain-id 56 --api-key $BSCSCAN_API_KEY
+  --chain-id 56 --api-key $ETHERSCAN_API_KEY
 ```
 
 ### Testing tips
@@ -282,7 +281,7 @@ vm.warp(block.timestamp + 7 days);   // skip past the timelock window
 | **Solhint** | Solidity linting (`pnpm solhint`) |
 | **Foundry Invariant** | `test/invariant/` continuously verifies settlement conservation |
 | **Gas Snapshot** | `.gas-snapshot` tracks gas usage; CI enforces no unrecorded regressions |
-| **Pre-commit Hook** | Husky + lint-staged auto-runs Prettier before commit |
+| **Prettier** | `prettier-plugin-solidity` formatting (`forge fmt --check` in CI) |
 
 When investigating "why is the code shaped this way", grep `BeamPayRouter.sol` for `H-0x` / `M-0x` / `L-0x` tags — those are audit fix sites.
 
@@ -328,7 +327,7 @@ A: The contract has **no** `receive` / `fallback` functions — all bare transfe
 
 ## 📄 License
 
-No LICENSE file has been published for this repository yet; licensing will be announced in the repository.
+MIT (declared in [`package.json`](./package.json)); a standalone LICENSE file will follow.
 
 ---
 

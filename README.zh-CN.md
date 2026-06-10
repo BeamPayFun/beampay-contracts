@@ -13,7 +13,7 @@
 | 传统支付通道 | BeamPay |
 |---|---|
 | 资金先进入平台账户，再结算给商户 | 资金从付款人**直接进入订单签名的收款地址（receiver，通常即商户钱包）**，合约不经手一分钱 |
-| 平台可冻结、可暂停、可改规则 | 合约**无管理员、无暂停按钮、无下架功能**，部署后即固定 |
+| 平台可冻结、可暂停、可改规则 | 合约**无资金管理员、无暂停按钮、无下架功能**——治理只能添加代币/收款人、在硬上限内调费率 |
 | 手续费率随时可调 | 手续费率上限**硬编码 0.1%**（合约层面不可逾越） |
 | 退款依赖客服 | 商户可链上直接发起部分/全额退款 |
 
@@ -32,7 +32,7 @@
 
 > `receiver` 是商户在创建订单时签名指定的收款地址（v1.4 起每笔订单可独立指定），典型场景下就是商户自己的钱包。
 
-交易完成的那一刻，**合约余额为 0**。这意味着：
+交易完成的那一刻，**路由器中不留存这笔支付的任何资金**——资金同笔交易进、同笔交易出。这意味着：
 - 平台跑路？— 合约里没钱可跑
 - 合约被攻击？— 合约里没钱可被偷
 - 监管冻结合约？— 没有"冻结"这个功能存在
@@ -83,7 +83,7 @@
 
 路由器通过 **CREATE3（CreateX factory）盐定址部署**，在所有链上拥有**完全相同的地址**。
 
-原生币（BNB/ETH）通过约定的特殊地址 `0xEeee...EEeE` 表示，使用方式与 ERC20 完全一致。
+原生币（BNB/ETH）通过约定的特殊地址 `0xEeee...EEeE` 表示，白名单与结算语义与 ERC20 一致（原生路径额外要求 `msg.value == amount`）。
 
 ---
 
@@ -102,7 +102,7 @@
 | 7 | 兼容 USDT 等"非标"ERC20 | 即使代币 `transfer` 不返回 bool 也能正常工作 |
 | 8 | 退款代币读自订单存档 | 调用方无法伪造退款代币 |
 | 9 | 两步治理切换 + `renounceGovernance` | 治理可永久放弃（变成真正的无主合约） |
-| 10 | 无 `receive` / `fallback` | 误转入的原生币会被原路退回 |
+| 10 | 无 `receive` / `fallback` | 裸原生转账直接 revert，资金不会卡在合约里 |
 
 ---
 
@@ -227,15 +227,14 @@ forge test --match-test testFeeHardLimitIsConstant -vvv
 
 ```bash
 PRIVATE_KEY=             # 部署者私钥
-BSCSCAN_API_KEY=         # 合约验证用
-ETHERSCAN_API_KEY=
+ETHERSCAN_API_KEY=       # 合约验证用（Etherscan V2 统一 key，覆盖 ETH/BSC/testnet）
 BSC_RPC_URL=             # BSC mainnet RPC
 BSC_TESTNET_RPC_URL=
 ETH_RPC_URL=
 GOVERNANCE=              # 治理多签地址（构造函数参数）
 INITIAL_TOKENS=          # 初始白名单代币（逗号分隔）
 INITIAL_RECIPIENTS=      # 初始费用收款人（1..20 个，逗号分隔）
-INITIAL_FEE_RATE=10      # 基点；必须 <= 10
+INITIAL_FEE_RATE=10      # 基点；必须 <= 10（测试网为 10；主网部署时为 0）
 ```
 
 ### 部署（CREATE3，跨链同地址）
@@ -252,7 +251,7 @@ forge script script/MineSalt.s.sol
 forge script script/DeployCreate3.s.sol \
   --rpc-url $BSC_RPC_URL \
   --private-key $PRIVATE_KEY \
-  --etherscan-api-key $BSCSCAN_API_KEY \
+  --etherscan-api-key $ETHERSCAN_API_KEY \
   --broadcast --verify -vvv
 ```
 
@@ -262,7 +261,7 @@ forge script script/DeployCreate3.s.sol \
 
 ```bash
 forge verify-contract <address> BeamPayRouter \
-  --chain-id 56 --api-key $BSCSCAN_API_KEY
+  --chain-id 56 --api-key $ETHERSCAN_API_KEY
 ```
 
 ### 测试技巧
@@ -282,7 +281,7 @@ vm.warp(block.timestamp + 7 days);   // 跳过 timelock 窗口
 | **Solhint** | Solidity Linting（`pnpm solhint`） |
 | **Foundry Invariant** | `test/invariant/` 持续验证账目守恒 |
 | **Gas Snapshot** | `.gas-snapshot` 跟踪 gas 消耗，CI 强制无未记录回归 |
-| **Pre-commit Hook** | Husky + lint-staged 提交前自动 Prettier |
+| **Prettier** | `prettier-plugin-solidity` 格式化（CI 跑 `forge fmt --check`） |
 
 排查"代码为什么这样写"时，可在 `BeamPayRouter.sol` 中搜索 `H-0x` / `M-0x` / `L-0x` 标签——这些是审计修复点。
 
@@ -328,7 +327,7 @@ A：合约**没有** `receive` / `fallback` 函数，所有裸转账都会 rever
 
 ## 📄 许可证
 
-本仓库暂未发布 LICENSE 文件，许可证以仓库后续公告为准。
+MIT（声明于 [`package.json`](./package.json)）；独立 LICENSE 文件后续补充。
 
 ---
 
